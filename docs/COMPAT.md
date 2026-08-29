@@ -21,15 +21,20 @@ depends on is recorded here with the build it was last verified against.
 
 ## Harmony patches
 
-_None yet._
-
 | Target | Signature | Why not a hook | Verified |
 | --- | --- | --- | --- |
-| — | — | — | — |
+| `MegaCrit.Sts2.Core.Nodes.NRun._Ready` | `public override void _Ready()` | Every hook on `Hook` reports a *gameplay* event to a model. None of them yields the scene node the HUD must be parented to, and the HUD has to exist before any gameplay event fires. Postfix only; reads `__instance` and returns void. | `v0.107.1` |
+
+Attaching to `NRun` rather than to the scene root is deliberate: the HUD's
+lifetime becomes the run's lifetime, so abandoning a run frees it and the next
+run builds a fresh one with no teardown code of our own.
 
 ## Semantic hooks
 
-_None yet._
+_None yet — M3 onward._ The mechanism is settled and recorded under
+"Verified environment facts" below: hooks are consumed by subclassing
+`AbstractModel` and registering the instance through `ModHelper`, not by
+implementing an interface.
 
 | Hook | Used for | Verified |
 | --- | --- | --- |
@@ -50,6 +55,12 @@ from community documentation.
 | Game log is `%APPDATA%\SlayTheSpire2\logs\godot.log` | observed; `<STS2>\sts2_stdout.log` is **not** reliably written |
 | `ModManager.Initialize` takes `(IModManagerFileIo, ModSettings, SemanticVersion)` | loader stack trace — note the third parameter is **not** in the v0.103.3 community docs |
 | Steam Workshop is live for app `2868840` | subscribed items present under `steamapps/workshop/content/2868840` |
+| Hooks are **`public virtual Task` methods on `AbstractModel`**, not interfaces — there are zero `IAfterX` types in the assembly | reflection over `sts2.dll`; `Hook.AfterRoomEntered` documents itself as "See `AbstractModel.AfterRoomEntered`" |
+| A mod receives hooks by returning its own `AbstractModel` instances from `ModHelper.SubscribeForRunStateHooks(string, RunHookSubscriptionDelegate)` / `SubscribeForCombatStateHooks` | `sts2.xml`: "custom model types to a RunState when IterateHookListeners is called" |
+| `RunHookSubscriptionDelegate` is `IEnumerable<AbstractModel> (RunState)`; the combat twin takes `CombatState` | reflection over `sts2.dll` |
+| `AbstractModel` is abstract with a **protected parameterless constructor** — subclassable by a mod | reflection over `sts2.dll` |
+| `NRun.GlobalUi` → `NGlobalUi : Godot.Control`, exposing `TopBar`, `Overlays`, `CardPreviewContainer`, `AboveTopBarVfxContainer` as parenting targets | reflection over `sts2.dll` |
+| **Godot source generators fire for a mod assembly.** `Ossuary.Hud.HudController : CanvasLayer` compiles with the full interop bridge (`InvokeGodotClassMethod`, `HasGodotClassMethod`, `GetGodotMethodList`, `SaveGodotObjectData`) — the same shape the game's own `NRun` carries | reflection over the built `Ossuary.dll` |
 
 ## Known drift from community documentation
 

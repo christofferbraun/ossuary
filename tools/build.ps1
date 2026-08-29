@@ -34,13 +34,37 @@ if (-not $version) { throw 'Could not read <Version> from Directory.Build.props'
 
 Write-Host "Ossuary $version ($Configuration)" -ForegroundColor Cyan
 
+# ── locate a dotnet that actually has an SDK ─────────────────────────────────
+# A machine can carry a runtime-only install (typically C:\Program Files\dotnet)
+# ahead of the SDK on PATH, in which case a bare `dotnet build` fails with "No
+# .NET SDKs were found" even though an SDK is installed. Probe candidates and
+# take the first that reports one, rather than trusting PATH order.
+function Resolve-DotNet {
+    $candidates = @()
+    if ($env:DOTNET_ROOT) { $candidates += (Join-Path $env:DOTNET_ROOT 'dotnet.exe') }
+    $candidates += (Join-Path $env:USERPROFILE '.dotnet\dotnet.exe')
+    $candidates += (Get-Command dotnet -All -ErrorAction SilentlyContinue | ForEach-Object { $_.Source })
+
+    foreach ($c in ($candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique)) {
+        try {
+            $sdks = & $c --list-sdks
+            if ($LASTEXITCODE -eq 0 -and $sdks) { return $c }
+        }
+        catch { }
+    }
+    throw 'No .NET SDK found. Install the .NET 9 SDK, or point DOTNET_ROOT at an install that has one.'
+}
+
+$dotnet = Resolve-DotNet
+Write-Host "using $dotnet" -ForegroundColor DarkGray
+
 $buildArgs = @(
     'build', (Join-Path $repo 'src\Ossuary\Ossuary.csproj'),
     '-c', $Configuration, '--nologo'
 )
 if ($GameDir) { $buildArgs += "-p:GameDir=$GameDir" }
 
-& dotnet @buildArgs
+& $dotnet @buildArgs
 if ($LASTEXITCODE -ne 0) { throw "Build failed with exit code $LASTEXITCODE" }
 
 # ── stage ────────────────────────────────────────────────────────────────────

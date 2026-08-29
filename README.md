@@ -30,12 +30,12 @@ In development. Nothing is playable yet.
 | Milestone | State |
 | --- | --- |
 | **M0** Toolchain, project skeleton, mod loads | ✅ done |
-| **M1** HUD shell — click-through canvas, settings, hotkey | next |
-| **M2** Deck tracker | planned |
-| **M3** Attack forecast | planned |
-| **M4** Bundled community data + normal-curve tiers | planned |
+| **M1** HUD shell — click-through canvas, settings, hotkey | 🔨 built, in testing |
+| **M2** Bundled community data + normal-curve tiers | planned |
+| **M3** Deck tracker | planned |
+| **M4** Attack forecast | planned |
 | **M5** Tier ratings on offers | planned |
-| **M6** Packaging and release | planned |
+| **M6** Workshop release | planned |
 
 Deck-*conditioned* advice — grades that account for the deck you actually have —
 is planned for v2.

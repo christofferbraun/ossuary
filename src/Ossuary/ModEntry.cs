@@ -19,6 +19,16 @@ public static class ModEntry
     public const string ModId = "Ossuary";
     public const string HarmonyId = "com.christofferbraun.ossuary";
 
+    /// <summary>This build of Ossuary, e.g. <c>0.1.0</c>.</summary>
+    public static string Version { get; } =
+        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "?";
+
+    /// <summary>
+    /// Player settings, read once at startup. Panels read this rather than
+    /// touching disk, so a slow or missing file costs one read, not one a frame.
+    /// </summary>
+    internal static OssuarySettings Settings { get; private set; } = new();
+
     private static Harmony? _harmony;
 
     public static void Initialize()
@@ -28,10 +38,10 @@ public static class ModEntry
         // some paths, takes more than just this mod down with it.
         try
         {
-            var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "?";
-            Log.Info($"v{version} initializing…");
+            Log.Info($"v{Version} initializing…");
 
             CheckGameVersion();
+            Settings = OssuarySettings.Load();
 
             _harmony = new Harmony(HarmonyId);
             _harmony.PatchAll(typeof(ModEntry).Assembly);
