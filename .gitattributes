@@ -1,0 +1,20 @@
+# Normalise to LF in the repository; check out native on Windows.
+* text=auto
+
+# Scripts and sources keep LF in the working tree so the same file behaves
+# identically whether it is edited on Windows or in CI on Linux.
+*.cs      text eol=lf
+*.csproj  text eol=lf
+*.props   text eol=lf
+*.sln     text eol=crlf
+*.json    text eol=lf
+*.md      text eol=lf
+*.yml     text eol=lf
+*.csv     text eol=lf
+
+# PowerShell is Windows-hosted here; CRLF avoids surprises in older hosts.
+*.ps1     text eol=crlf
+
+*.dll     binary
+*.pck     binary
+*.png     binary

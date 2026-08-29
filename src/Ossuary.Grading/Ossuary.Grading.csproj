@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Deliberately references nothing from the game.
+
+    This is where the logic that is worth testing lives — tier banding,
+    confidence, draw odds — so that CI can verify it on a machine that does not
+    have (and may not legally have) Slay the Spire 2 installed.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <AssemblyName>Ossuary.Grading</AssemblyName>
+    <RootNamespace>Ossuary.Grading</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+</Project>

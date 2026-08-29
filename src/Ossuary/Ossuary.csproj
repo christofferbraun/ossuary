@@ -1,0 +1,75 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <AssemblyName>Ossuary</AssemblyName>
+    <RootNamespace>Ossuary</RootNamespace>
+
+    <!-- The loader wants a bare DLL beside the manifest. A deps.json next to it
+         is not read by the game and only invites confusion, so don't emit one. -->
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+
+    <!-- Godot's generators read this. Without it they emit a diagnostic and the
+         script-method bridge is not generated, which is how `_Ready` silently
+         never fires on a custom Node subclass. -->
+    <GodotProjectDir>$(MSBuildProjectDirectory)</GodotProjectDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="GodotProjectDir" />
+  </ItemGroup>
+
+  <Target Name="ValidateGameReferences" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(Sts2DataDir)\sts2.dll')"
+           Text="Slay the Spire 2 not found at '$(GameDir)'. Set GameDir via -p:GameDir=..., a gitignored GameDir.props in the repo root, or the OSSUARY_GAME_DIR environment variable." />
+  </Target>
+
+  <!--
+    Game-owned assemblies. Private=false keeps them out of the staged output:
+    the running game already supplies them, and shipping copies is precisely how
+    a mod ends up bound to an assembly version the player does not have.
+
+    sts2.xml sits beside sts2.dll in the install, so IntelliSense picks up the
+    game's own API documentation with no extra work.
+  -->
+  <ItemGroup>
+    <Reference Include="sts2">
+      <HintPath>$(Sts2DataDir)\sts2.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(Sts2DataDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="GodotSharp">
+      <HintPath>$(Sts2DataDir)\GodotSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!--
+    Analyzer only - never shipped, never loaded at runtime. Pinned to 4.5.1 to
+    match the GodotSharp 4.5.1.0 the game ships; the generated interop bridge
+    must agree with the runtime that consumes it.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Godot.SourceGenerators" Version="4.5.1"
+                      PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <!--
+    The grading logic is compiled INTO this assembly rather than referenced as a
+    project. The mod loader loads exactly one file - <id>.dll - so a second
+    assembly beside it would resolve only if the loader's probing happened to
+    find it. Linking the sources keeps one shipped DLL and no such gamble, while
+    Ossuary.Grading stays a real project so CI can test it without the game.
+  -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildProjectDirectory)\..\Ossuary.Grading\**\*.cs"
+             Exclude="$(MSBuildProjectDirectory)\..\Ossuary.Grading\bin\**;$(MSBuildProjectDirectory)\..\Ossuary.Grading\obj\**"
+             LinkBase="Grading" />
+  </ItemGroup>
+
+</Project>

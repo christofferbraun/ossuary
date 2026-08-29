@@ -1,0 +1,36 @@
+<Project>
+
+  <!--
+    Locates the Slay the Spire 2 install so every project can reference the
+    game's assemblies. Resolution order, first match wins:
+
+      1. -p:GameDir=...            (explicit, e.g. from CI or a one-off build)
+      2. GameDir.props             (gitignored; per-machine override)
+      3. OSSUARY_GAME_DIR          (environment variable)
+      4. the default Steam path
+
+    Projects that do not need the game (Ossuary.Grading and its tests) simply
+    ignore all of this, which is what lets them build in CI.
+  -->
+
+  <Import Project="$(MSBuildThisFileDirectory)GameDir.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)GameDir.props')" />
+
+  <PropertyGroup>
+    <GameDir Condition="'$(GameDir)' == '' And '$(OSSUARY_GAME_DIR)' != ''">$(OSSUARY_GAME_DIR)</GameDir>
+    <GameDir Condition="'$(GameDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Slay the Spire 2</GameDir>
+    <Sts2DataDir Condition="'$(Sts2DataDir)' == ''">$(GameDir)\data_sts2_windows_x86_64</Sts2DataDir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <Version>0.1.0</Version>
+    <Authors>christofferbraun</Authors>
+    <Product>Ossuary</Product>
+  </PropertyGroup>
+
+</Project>

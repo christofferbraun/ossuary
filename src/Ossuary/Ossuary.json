@@ -1,0 +1,12 @@
+{
+  "id": "Ossuary",
+  "name": "Ossuary",
+  "author": "christofferbraun",
+  "description": "Deck tracker with draw odds, incoming-attack forecast, and community tier ratings on card, relic and potion offers. Reads and displays only.",
+  "version": "__VERSION__",
+  "min_game_version": "0.107.1",
+  "has_pck": false,
+  "has_dll": true,
+  "dependencies": [],
+  "affects_gameplay": false
+}
