@@ -47,6 +47,13 @@ public partial class HudController : CanvasLayer
         {
             if (parent.GetNodeOrNull(new NodePath(NodeName)) is not null) return;
 
+            // A session plays many runs. Anything latched during the last one -
+            // a cached combat, a failure that disabled a reader - would
+            // otherwise carry into this one.
+            State.CombatWatcher.Reset();
+            State.DrawEstimator.Reset();
+            State.IntentReader.Reset();
+
             var hud = new HudController { Name = NodeName, Layer = OverlayLayer, _settings = settings };
             parent.AddChild(hud);
             Log.Info($"HUD attached to {parent.GetType().Name}; awaiting _Ready");
