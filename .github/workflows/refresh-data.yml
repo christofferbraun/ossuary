@@ -12,6 +12,9 @@ on:
   schedule:
     # Weekly, Monday 06:00 UTC. Codex rebuilds far more often than Ossuary
     # ships, so anything more frequent is churn.
+    #
+    # Scheduled workflows only run from the default branch, and GitHub disables
+    # them after 60 days without repository activity.
     - cron: '0 6 * * 1'
   workflow_dispatch:
     inputs:
@@ -64,11 +67,22 @@ jobs:
             echo 'OSSUARY_EOF'
           } >> "$GITHUB_OUTPUT"
 
-      # The tests assert the curve against the table that is about to ship, so a
-      # refresh that flattens the distribution or trips the top-heavy guard fails
-      # here rather than becoming a pull request nobody should merge.
-      - name: Test the regraded table
+      # Non-blocking on purpose.
+      #
+      # These tests assert things about the regenerated table, and a failure is
+      # worth seeing — but not worth throwing the refresh away over. If this step
+      # gated the pull request, a game patch that added cards would fail the job,
+      # create nothing, and discard the fetched table on the runner, leaving a red
+      # scheduled run nobody is watching. Instead the result is reported in the PR
+      # body and a failing refresh opens as a draft.
+      #
+      # It has to run here rather than on the pull request: GitHub does not
+      # trigger workflows for events raised by GITHUB_TOKEN, so a PR opened by
+      # this job never fires ci.yml.
+      - name: Verify the regraded table
         if: steps.check.outputs.stale == 'true' || inputs.force
+        id: verify
+        continue-on-error: true
         run: dotnet test tests/Ossuary.Grading.Tests/Ossuary.Grading.Tests.csproj -c Release --verbosity normal
 
       - name: Open a pull request
@@ -76,7 +90,11 @@ jobs:
         uses: peter-evans/create-pull-request@v7
         with:
           branch: data/codex-refresh
-          title: 'Refresh Codex ratings'
+          draft: ${{ steps.verify.outcome == 'failure' }}
+          title: >-
+            ${{ steps.verify.outcome == 'failure'
+                && 'Refresh Codex ratings (checks failing)'
+                || 'Refresh Codex ratings' }}
           commit-message: |
             Refresh Codex ratings
 
@@ -87,10 +105,13 @@ jobs:
             Spire Codex published a newer snapshot, so the bundled rating table
             has been refetched and regraded.
 
-            The band distribution and the tier changes are below. Tiers are
-            derived over the whole population, so an entry can move grade
-            because *other* entries moved, not only because its own numbers
-            changed.
+            **Checks: ${{ steps.verify.outcome == 'failure' && 'FAILING — opened as a draft, do not merge without reading the run log' || 'passing' }}**
+
+            Tiers are derived over the whole population, so an entry can move
+            grade because *other* entries moved, not only because its own
+            numbers changed. The table is also reconciled against Codex's
+            compendium, so anything retired from the game is dropped rather
+            than left to influence where the band thresholds fall.
 
             ```
             ${{ steps.fetch.outputs.summary }}

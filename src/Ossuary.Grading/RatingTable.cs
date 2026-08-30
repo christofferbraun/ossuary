@@ -73,6 +73,21 @@ public sealed class RatingTable
     /// <summary>Runs behind the numbers, across the whole population.</summary>
     public long TotalRuns { get; }
 
+    /// <summary>
+    /// How much of the game each kind covers: how many entities were rated, out
+    /// of how many exist in Codex's compendium.
+    /// </summary>
+    /// <remarks>
+    /// Relics and potions come out fully covered. Cards do not and cannot:
+    /// curses, statuses, tokens, quest cards and event or ancient-pool cards are
+    /// never offered in a ranked card reward, so there is no pick data to rate
+    /// them from. Carrying the counts here lets tests assert the *relationship*
+    /// — everything offerable is rated — instead of a magic number that a game
+    /// patch would break for an entirely legitimate reason.
+    /// </remarks>
+    public IReadOnlyDictionary<RatingKind, (int Rated, int InGame)> Coverage { get; private init; }
+        = new Dictionary<RatingKind, (int, int)>();
+
     /// <summary>Every entry of one kind, in the order they were bundled.</summary>
     public IReadOnlyList<RatedEntry> All(RatingKind kind) =>
         _byKind.TryGetValue(kind, out var rows) ? rows : [];
@@ -119,6 +134,7 @@ public sealed class RatingTable
         var version = 0;
         var dataThrough = "";
         var totalRuns = 0L;
+        var coverage = new Dictionary<RatingKind, (int, int)>();
         var byId = new Dictionary<(RatingKind, string), RatedEntry>();
         var byKind = new Dictionary<RatingKind, List<RatedEntry>>();
 
@@ -140,6 +156,9 @@ public sealed class RatingTable
                         break;
                     case "total_runs":
                         totalRuns = long.Parse(meta[1], CultureInfo.InvariantCulture);
+                        break;
+                    case "coverage":
+                        coverage = ParseCoverage(meta[1]);
                         break;
                 }
 
@@ -175,7 +194,30 @@ public sealed class RatingTable
             dataThrough,
             totalRuns,
             byId,
-            byKind.ToDictionary(p => p.Key, p => (IReadOnlyList<RatedEntry>)p.Value));
+            byKind.ToDictionary(p => p.Key, p => (IReadOnlyList<RatedEntry>)p.Value))
+        {
+            Coverage = coverage,
+        };
+    }
+
+    /// <summary>
+    /// Reads the coverage header, e.g. <c>cards 503/577  relics 296/296</c>.
+    /// </summary>
+    private static Dictionary<RatingKind, (int, int)> ParseCoverage(string value)
+    {
+        var result = new Dictionary<RatingKind, (int, int)>();
+        var tokens = value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        for (var i = 0; i + 1 < tokens.Length; i += 2)
+        {
+            var parts = tokens[i + 1].Split('/');
+            if (parts.Length != 2) continue;
+            if (!int.TryParse(parts[0], CultureInfo.InvariantCulture, out var rated)) continue;
+            if (!int.TryParse(parts[1], CultureInfo.InvariantCulture, out var inGame)) continue;
+            result[ParseKind(tokens[i])] = (rated, inGame);
+        }
+
+        return result;
     }
 
     private static RatingKind ParseKind(string value) => value switch

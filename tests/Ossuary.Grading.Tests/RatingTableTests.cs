@@ -21,20 +21,55 @@ public class RatingTableTests
     }
 
     /// <summary>
-    /// Every relic and potion in the game is rated. Cards are not, and cannot
-    /// be: of the 577 in Codex's compendium, 74 are curses, statuses, tokens,
-    /// quest cards or event and ancient-pool cards, which are never offered in a
-    /// ranked card reward and so have no pick data to rate. Those show "no data"
-    /// at an offer rather than a grade.
+    /// Every relic and potion in the game is rated.
+    /// </summary>
+    /// <remarks>
+    /// Asserted as a relationship against the compendium counts in the table's
+    /// own header, not as a fixed number. A game patch that adds relics is an
+    /// entirely legitimate event and must not fail the build; a fetch that
+    /// silently dropped half of them must.
+    /// </remarks>
+    [Theory]
+    [InlineData(RatingKind.Relic)]
+    [InlineData(RatingKind.Potion)]
+    public void RatesEveryOneOfThese(RatingKind kind)
+    {
+        var table = Load();
+        var (rated, inGame) = table.Coverage[kind];
+
+        Assert.Equal(inGame, rated);
+        Assert.Equal(rated, table.All(kind).Count);
+    }
+
+    /// <summary>
+    /// Most cards are rated, but not all of them can be: curses, statuses,
+    /// tokens, quest cards and event or ancient-pool cards are never offered in
+    /// a ranked card reward, so there is no pick data to rate them from. Those
+    /// show "no data" at an offer rather than a grade.
     /// </summary>
     [Fact]
-    public void RatesEverythingTheGameCanOffer()
+    public void RatesMostCards()
+    {
+        var table = Load();
+        var (rated, inGame) = table.Coverage[RatingKind.Card];
+
+        Assert.Equal(rated, table.All(RatingKind.Card).Count);
+        Assert.True(
+            rated >= inGame * 0.80,
+            $"only {rated} of {inGame} cards are rated, which is too few to be the unratable ones alone");
+        Assert.True(rated <= inGame, $"{rated} rated exceeds the {inGame} that exist");
+    }
+
+    [Fact]
+    public void KnowsHowMuchOfTheGameItCovers()
     {
         var table = Load();
 
-        Assert.Equal(503, table.All(RatingKind.Card).Count);
-        Assert.Equal(296, table.All(RatingKind.Relic).Count);
-        Assert.Equal(63, table.All(RatingKind.Potion).Count);
+        foreach (var kind in new[] { RatingKind.Card, RatingKind.Relic, RatingKind.Potion })
+        {
+            Assert.True(table.Coverage.ContainsKey(kind), $"no coverage recorded for {kind}");
+            Assert.True(table.Coverage[kind].InGame > 0);
+        }
     }
 
     /// <summary>
