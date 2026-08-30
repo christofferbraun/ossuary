@@ -17,11 +17,10 @@ namespace Ossuary.State;
 /// anything.
 /// </para>
 /// <para>
-/// The one model Ossuary contributes is <see cref="DrawObserver"/>, which
-/// overrides only hooks that report what happened and returns no modified value
-/// from any of them. It cannot alter a run; it exists because the number of
-/// cards drawn at the start of a turn is computed and discarded rather than
-/// stored anywhere readable.
+/// Ossuary contributes no models. It reads and draws; adding a model to the
+/// game's hook iteration would be a change to the run rather than an
+/// observation of it. The subscription exists solely to learn which combat is
+/// live.
 /// </para>
 /// <para>
 /// This is why the deck tracker needs no Harmony patch. The one patch Ossuary
@@ -30,7 +29,7 @@ namespace Ossuary.State;
 /// </remarks>
 internal static class CombatWatcher
 {
-    private static readonly MegaCrit.Sts2.Core.Models.AbstractModel[] Listeners = [new DrawObserver()];
+    private static readonly MegaCrit.Sts2.Core.Models.AbstractModel[] None = [];
 
     private static CombatState? _current;
     private static bool _everSeen;
@@ -78,6 +77,6 @@ internal static class CombatWatcher
             Log.Info($"combat observed — {state.Players.Count} player(s)");
         }
 
-        return Listeners;
+        return None;
     }
 }

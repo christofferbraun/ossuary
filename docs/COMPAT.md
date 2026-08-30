@@ -40,6 +40,31 @@ implementing an interface.
 | --- | --- | --- |
 | — | — | — |
 
+## Game code called as a query
+
+Ossuary reads and draws. Where it calls into the game to *ask* something, the
+call must be free of side effects, and that has to be established rather than
+assumed.
+
+| Call | Why | How it was verified | Verified |
+| --- | --- | --- | --- |
+| `Hook.ModifyHandDraw(state, player, 5m, out _)` | The number of cards drawn next turn is computed each turn and discarded; nothing stores it. This is the same call `CombatManager` makes, so the answer is exactly what the game will do. | Decompiled every implementation: 17 `ModifyHandDraw` overrides (9 relics, 8 powers) and the 1 `ModifyHandDrawLate` override (`Fiddle`). All are pure — they read state and return a number, and none assigns to a field or property. `Hook.ModifyHandDraw` itself only iterates and accumulates. | `v0.107.1` |
+
+Two caveats, both deliberate:
+
+- The dispatch iterates *all* hook listeners, including models contributed by
+  other mods. Those cannot be verified. The call is throttled to twice a second
+  rather than run per frame partly for this reason: at worst it doubles how
+  often such an override runs instead of multiplying it by the frame rate.
+- **Re-check this after a game update.** A future relic whose `ModifyHandDraw`
+  has a side effect would make this call unsafe, and nothing would fail loudly.
+
+## Assumptions about specific game types
+
+| Assumption | Used for | If it breaks | Verified |
+| --- | --- | --- | --- |
+| A `DrawCardsNextTurnPower` with `AmountOnTurnStart == 0` and `Amount > 0` is draw the player has earned this turn that applies next turn | Playing "draw N extra cards next turn" must move the odds immediately. The game's own guard is `if (AmountOnTurnStart == 0) return count;` — deliberate, so a power gained mid-turn cannot apply to a draw that already happened — which means the hook under-reports until the turn flips. | The type match silently stops applying and the estimate degrades to the hook's answer. No exception, slightly stale number. | `v0.107.1` |
+
 ## Verified environment facts
 
 These were confirmed directly against the installed build rather than inferred
