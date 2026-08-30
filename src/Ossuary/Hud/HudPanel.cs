@@ -33,8 +33,7 @@ internal abstract class HudPanel
         try
         {
             Root = BuildRoot();
-            // A panel must never eat a click meant for the game.
-            Root.MouseFilter = Control.MouseFilterEnum.Ignore;
+            MakeInputTransparent(Root);
             return true;
         }
         catch (Exception ex)
@@ -42,6 +41,23 @@ internal abstract class HudPanel
             Fail("could not be built", ex);
             return false;
         }
+    }
+
+    /// <summary>
+    /// Makes an entire control subtree transparent to the mouse.
+    /// </summary>
+    /// <remarks>
+    /// This has to walk the tree. <c>MouseFilter.Ignore</c> on a parent does not
+    /// propagate — Godot hit-tests every control independently — and while
+    /// <see cref="Label"/> happens to default to <c>Ignore</c>, containers such
+    /// as <see cref="PanelContainer"/> and <see cref="VBoxContainer"/> default
+    /// to <c>Stop</c>. Setting only the panel's root therefore leaves its own
+    /// containers eating hovers and clicks meant for the game underneath.
+    /// </remarks>
+    private static void MakeInputTransparent(Node node)
+    {
+        if (node is Control control) control.MouseFilter = Control.MouseFilterEnum.Ignore;
+        foreach (var child in node.GetChildren()) MakeInputTransparent(child);
     }
 
     internal void Tick(double delta)

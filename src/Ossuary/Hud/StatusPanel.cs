@@ -19,12 +19,19 @@ internal sealed class StatusPanel : HudPanel
         var panel = new PanelContainer
         {
             Name = "OssuaryStatus",
-            // Anchored rather than positioned: the game is played at every
-            // aspect ratio, and there is no coordinate math to get wrong.
+            // Offsets are in the game's 1920x1080 design space, which Godot
+            // scales to whatever the window actually is. Placed below the top
+            // bar (ends ~y=91) and the relic row (~y=96-139) so it covers
+            // neither.
+            //
+            // Hardcoded coordinates are a placeholder and the thing going native
+            // was supposed to avoid. The real panels parent into the containers
+            // NGlobalUi already exposes - TopBar, Overlays, CardPreviewContainer
+            // - so they sit beside what they annotate and move with it.
             OffsetLeft = 24,
-            OffsetTop = 24,
+            OffsetTop = 168,
             OffsetRight = 300,
-            OffsetBottom = 96,
+            OffsetBottom = 240,
         };
 
         var style = new StyleBoxFlat

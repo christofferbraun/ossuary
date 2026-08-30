@@ -18,7 +18,7 @@ internal sealed class CanaryPanel : HudPanel
         var label = new Label { Text = "canary: about to throw" };
         label.AddThemeColorOverride("font_color", new Color(0.83f, 0.45f, 0.37f));
         label.OffsetLeft = 24;
-        label.OffsetTop = 108;
+        label.OffsetTop = 252;
         return label;
     }
 
