@@ -27,6 +27,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # git describe needs the tag history; the default shallow clone has
+          # none, and the release-notes step reads the previous tag from it.
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v6
         with:
