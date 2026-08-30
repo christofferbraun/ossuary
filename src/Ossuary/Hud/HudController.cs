@@ -31,6 +31,8 @@ public partial class HudController : CanvasLayer
     private Label? _hint;
     private OssuarySettings _settings = new();
 
+    private OfferBadges? _badges;
+
     private bool _layoutMode;
     private HudPanel? _dragging;
     private Vector2 _dragGrip;
@@ -78,6 +80,8 @@ public partial class HudController : CanvasLayer
             Add(new StatusPanel());
             Add(new DeckPanel(_settings));
             Add(new ForecastPanel(_settings));
+
+            _badges = new OfferBadges(_settings);
             if (_settings.CanaryPanel) Add(new CanaryPanel());
 
             _hint = new Label
@@ -106,6 +110,11 @@ public partial class HudController : CanvasLayer
 
     public override void _Process(double delta)
     {
+        // Runs even when the HUD is hidden: badges hang off the game's own
+        // nodes rather than this layer, so hiding the HUD has to actively
+        // remove them rather than simply stop drawing.
+        if (GetParent() is { } run) _badges?.Tick(run, Visible);
+
         if (!Visible) return;
 
         // Panels isolate their own failures, so one bad panel cannot stop the

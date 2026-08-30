@@ -184,6 +184,27 @@ public class RatingTableTests
         Assert.Equal(bare, lower);
     }
 
+    /// <summary>
+    /// The game hands out ids as <c>Category.Entry</c> — <c>CARD.BACKFLIP</c>,
+    /// <c>RELIC.AKABEKO</c>, <c>POTION.ASHWATER</c> — while Codex publishes the
+    /// bare entry. Every offer lookup depends on the two meeting.
+    /// </summary>
+    [Theory]
+    [InlineData(RatingKind.Card, "CARD.BACKFLIP", "BACKFLIP")]
+    [InlineData(RatingKind.Relic, "RELIC.AKABEKO", "AKABEKO")]
+    [InlineData(RatingKind.Relic, "RELIC.ARCANE_SCROLL", "ARCANE_SCROLL")]
+    [InlineData(RatingKind.Potion, "POTION.ASHWATER", "ASHWATER")]
+    [InlineData(RatingKind.Potion, "POTION.BEETLE_JUICE", "BEETLE_JUICE")]
+    public void ResolvesGameIdsToCodexIds(RatingKind kind, string gameId, string codexId)
+    {
+        var table = Load();
+
+        Assert.True(table.TryGet(kind, gameId, out var fromGame), $"{gameId} did not resolve");
+        Assert.True(table.TryGet(kind, codexId, out var fromCodex));
+        Assert.Equal(fromCodex, fromGame);
+        Assert.Equal(codexId, fromGame.Id);
+    }
+
     [Fact]
     public void ReportsAMissRatherThanGuessing()
     {
