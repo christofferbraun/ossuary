@@ -20,12 +20,19 @@ in your draw pile and how likely you are to see it, how much damage is coming
 this turn, and how the community has actually performed with the card in front
 of you.
 
+The odds use the draw you will actually get — the game recomputes that every
+turn from your relics and powers, so Ossuary asks it rather than assuming five.
+When the draw pile runs shorter than your draw, the cards coming back from the
+reshuffle get their own section at real odds. The damage forecast runs the
+game's own calculation, so strength, vulnerable and weak are already applied.
+
 It runs **inside** the game as a normal mod, so it reads real game state rather
 than guessing at it, and it works with the window wherever you put it.
 
 ## Status
 
-In development. Nothing is playable yet.
+In development, and playable. The deck tracker and the attack forecast work in
+game; ratings on offers and the Workshop release are still to come.
 
 | Milestone | State |
 | --- | --- |
@@ -39,6 +46,18 @@ In development. Nothing is playable yet.
 
 Deck-*conditioned* advice — grades that account for the deck you actually have —
 is planned for v2.
+
+## Using it
+
+| Key | |
+| --- | --- |
+| `F9` | hide and show the HUD |
+| `F10` | layout mode — drag panels, `-` and `+` resize the text |
+
+Panel positions and text size are saved to
+`%APPDATA%\SlayTheSpire2\ossuary.json` and survive restarts. The deck tracker
+and the forecast take themselves off screen outside combat, and stay visible
+while you are arranging the HUD so they can be positioned.
 
 ## What it does not do
 
