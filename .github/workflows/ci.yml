@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, scaffold]
+    branches: [main]
+  # Every other branch is covered on its pull request, so work in progress is
+  # tested without naming each branch here.
   pull_request:
   workflow_dispatch:
 
