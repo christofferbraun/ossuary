@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Uploads the packaged workspace to the Steam Workshop.
 

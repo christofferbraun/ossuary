@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Builds Ossuary and assembles the Steam Workshop workspace.
 
