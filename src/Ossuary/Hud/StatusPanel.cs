@@ -3,15 +3,22 @@ using Godot;
 namespace Ossuary.Hud;
 
 /// <summary>
-/// The M1 placeholder: proves the HUD attaches, draws, and updates every frame.
-/// It is replaced by the real deck tracker in M3.
+/// Says that Ossuary is loaded, and what data it is working from.
 /// </summary>
+/// <remarks>
+/// This began as the M1 proof that the HUD attached and kept updating, with a
+/// running frame counter to show the engine was calling <c>_Process</c> on a
+/// mod-defined node. That question is settled, so the counter is gone — a
+/// permanent readout whose only job was to prove a one-off is clutter on every
+/// frame after it.
+///
+/// What stays is the part that keeps earning its place: which Codex snapshot is
+/// bundled and how much of the game it covers. That is what separates "no rating
+/// for this card" meaning a known gap in the data from meaning the table failed
+/// to load.
+/// </remarks>
 internal sealed class StatusPanel : HudPanel
 {
-    private Label? _label;
-    private double _elapsed;
-    private int _frames;
-
     internal StatusPanel() : base("status") { }
 
     protected override Control BuildRoot()
@@ -19,15 +26,9 @@ internal sealed class StatusPanel : HudPanel
         var panel = new PanelContainer
         {
             Name = "OssuaryStatus",
-            // Offsets are in the game's 1920x1080 design space, which Godot
-            // scales to whatever the window actually is. Placed below the top
-            // bar (ends ~y=91) and the relic row (~y=96-139) so it covers
-            // neither.
-            //
-            // Hardcoded coordinates are a placeholder and the thing going native
-            // was supposed to avoid. The real panels parent into the containers
-            // NGlobalUi already exposes - TopBar, Overlays, CardPreviewContainer
-            // - so they sit beside what they annotate and move with it.
+            // In the game's 1920x1080 design space, which Godot scales to
+            // whatever the window actually is. Below the top bar (ends ~y=91)
+            // and the relic row (~y=96-139) so it covers neither.
             Position = new Vector2(24, 168),
         };
 
@@ -49,12 +50,6 @@ internal sealed class StatusPanel : HudPanel
 
         box.AddChild(MakeLabel("OSSUARY", new Color(0.42f, 0.78f, 0.70f)));
 
-        _label = MakeLabel("attaching…", new Color(0.89f, 0.91f, 0.89f), 15);
-        box.AddChild(_label);
-
-        // The bundled ratings have no UI of their own until M5, so report them
-        // here: it is the difference between "the table is embedded" as a claim
-        // and as something visible in the running game.
         var table = Ratings.Table;
         box.AddChild(MakeLabel(
             table is null
@@ -66,16 +61,5 @@ internal sealed class StatusPanel : HudPanel
             14));
 
         return panel;
-    }
-
-    protected override void OnTick(double delta)
-    {
-        _elapsed += delta;
-        _frames++;
-        if (_label is null) return;
-
-        // Updating from _Process is what proves the generated bridge is live:
-        // if _Process were never invoked, this text would never change.
-        _label.Text = $"v{ModEntry.Version}  ·  {_elapsed:F1}s  ·  {_frames} frames";
     }
 }

@@ -28,6 +28,32 @@ internal abstract class HudPanel
     /// <summary>Set once this panel has thrown. A failed panel is never called again.</summary>
     internal bool Failed { get; private set; }
 
+    private bool _arranging;
+
+    /// <summary>
+    /// Tells the panel the HUD is being arranged.
+    /// </summary>
+    /// <remarks>
+    /// A panel that hides itself outside combat cannot be dragged into place
+    /// outside combat either, which is exactly when someone would want to. While
+    /// layout mode is on, panels stay on screen regardless.
+    /// </remarks>
+    internal void SetArranging(bool arranging)
+    {
+        _arranging = arranging;
+        if (arranging && Root is not null && !Failed) Root.Visible = true;
+    }
+
+    /// <summary>
+    /// Takes the panel off screen when it has nothing to say, unless the HUD is
+    /// being arranged.
+    /// </summary>
+    protected bool HideUnlessArranging()
+    {
+        if (Root is not null) Root.Visible = _arranging;
+        return _arranging;
+    }
+
     internal bool TryBuild()
     {
         try

@@ -231,6 +231,7 @@ public partial class HudController : CanvasLayer
         if (on && !Visible) SetHudVisible(true);
 
         _layoutMode = on;
+        foreach (var panel in _panels) panel.SetArranging(on);
         if (_hint is not null) _hint.Visible = on;
         if (_root is not null) _root.Modulate = on ? new Color(1f, 1f, 1f, 0.85f) : Colors.White;
 

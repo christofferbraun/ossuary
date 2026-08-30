@@ -33,8 +33,8 @@ In development. Nothing is playable yet.
 | **M1** HUD shell — click-through canvas, settings, hotkey | ✅ done |
 | **M2** Bundled community data + normal-curve tiers | ✅ done |
 | **M3** Deck tracker | ✅ done |
-| **M4** Attack forecast | next |
-| **M5** Tier ratings on offers | planned |
+| **M4** Attack forecast | ✅ done |
+| **M5** Tier ratings on offers | next |
 | **M6** Workshop release | planned |
 
 Deck-*conditioned* advice — grades that account for the deck you actually have —

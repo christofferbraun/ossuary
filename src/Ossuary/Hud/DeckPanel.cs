@@ -108,7 +108,8 @@ internal sealed class DeckPanel : HudPanel
         var player = CombatWatcher.LocalPlayer;
         if (state is null || player is null)
         {
-            ShowIdle("not in combat");
+            // Nothing to say outside a fight, so take up no room.
+            if (HideUnlessArranging()) ShowIdle("not in combat");
             return;
         }
 
@@ -116,9 +117,11 @@ internal sealed class DeckPanel : HudPanel
         var discard = PileReader.Read(player, PileType.Discard);
         if (draw.Count == 0 && discard.Count == 0)
         {
-            ShowIdle("no cards left");
+            if (HideUnlessArranging()) ShowIdle("no cards left");
             return;
         }
+
+        if (Root is not null) Root.Visible = true;
 
         Render(draw, discard, DrawEstimator.Estimate(state, player));
     }

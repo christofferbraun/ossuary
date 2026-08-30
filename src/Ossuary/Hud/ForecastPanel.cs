@@ -83,16 +83,18 @@ internal sealed class ForecastPanel : HudPanel
         var me = player?.Creature;
         if (state is null || me is null)
         {
-            ShowIdle("not in combat");
+            if (HideUnlessArranging()) ShowIdle("not in combat");
             return;
         }
 
         var intents = IntentReader.Read(state, state.PlayerCreatures);
         if (intents.Count == 0)
         {
-            ShowIdle("nothing incoming");
+            if (HideUnlessArranging()) ShowIdle("nothing incoming");
             return;
         }
+
+        if (Root is not null) Root.Visible = true;
 
         Render(intents, AttackForecast.Of(intents, me.Block, me.CurrentHp));
     }
