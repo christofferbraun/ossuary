@@ -27,6 +27,19 @@ internal sealed class OssuarySettings
     public string ToggleKey { get; set; } = "F9";
 
     /// <summary>
+    /// Name of a <see cref="Godot.Key"/> value that enters layout mode, in which
+    /// panels can be dragged. Outside layout mode the HUD never takes the mouse.
+    /// </summary>
+    public string LayoutKey { get; set; } = "F10";
+
+    /// <summary>
+    /// Where the player has dragged each panel, keyed by panel name. Absent
+    /// entries keep the panel's built-in default, so adding a panel later does
+    /// not require touching this file.
+    /// </summary>
+    public Dictionary<string, PanelPlacement> Panels { get; set; } = new();
+
+    /// <summary>
     /// Adds a panel whose only purpose is to throw, proving that one failing
     /// panel disables itself and leaves the rest of the HUD running. Off by
     /// default; this is a development aid, not a feature.
@@ -36,6 +49,10 @@ internal sealed class OssuarySettings
     [JsonIgnore]
     public Key ToggleKeyCode =>
         Enum.TryParse<Key>(ToggleKey, ignoreCase: true, out var key) ? key : Key.F9;
+
+    [JsonIgnore]
+    public Key LayoutKeyCode =>
+        Enum.TryParse<Key>(LayoutKey, ignoreCase: true, out var key) ? key : Key.F10;
 
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -101,4 +118,11 @@ internal sealed class OssuarySettings
             Log.Error("settings: could not be saved", ex);
         }
     }
+}
+
+/// <summary>A panel's top-left corner, in the game's design space.</summary>
+internal sealed class PanelPlacement
+{
+    public float X { get; set; }
+    public float Y { get; set; }
 }

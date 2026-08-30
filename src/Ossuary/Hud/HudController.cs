@@ -10,8 +10,8 @@ namespace Ossuary.Hud;
 /// This is the only type in Ossuary that subclasses a Godot node, and it exists
 /// as a <c>partial</c> class because Godot's source generators complete it with
 /// the interop bridge that lets the engine invoke <see cref="_Ready"/>,
-/// <see cref="_Process"/> and <see cref="_UnhandledKeyInput"/>. If that bridge
-/// is ever missing, those methods are silently never called — so attachment and
+/// <see cref="_Process"/> and the input callbacks. If that bridge is ever
+/// missing, those methods are silently never called — so attachment and
 /// readiness are logged separately, and seeing the first without the second is
 /// the signature of that failure.
 ///
@@ -28,7 +28,12 @@ public partial class HudController : CanvasLayer
 
     private readonly List<HudPanel> _panels = new();
     private Control? _root;
+    private Label? _hint;
     private OssuarySettings _settings = new();
+
+    private bool _layoutMode;
+    private HudPanel? _dragging;
+    private Vector2 _dragGrip;
 
     /// <summary>
     /// Builds the HUD under <paramref name="parent"/>, unless one is already
@@ -61,8 +66,10 @@ public partial class HudController : CanvasLayer
             _root = new Control
             {
                 Name = "Panels",
-                // The whole HUD is transparent to input. Ossuary reads and
-                // draws; it must never swallow a click meant for the game.
+                // The whole HUD is transparent to input, always. Dragging is
+                // handled in _Input by reading the mouse directly, so no panel
+                // ever has to become clickable and there is no state in which
+                // the HUD can swallow something meant for the game.
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             };
             _root.SetAnchorsPreset(Control.LayoutPreset.FullRect);
@@ -71,8 +78,21 @@ public partial class HudController : CanvasLayer
             Add(new StatusPanel());
             if (_settings.CanaryPanel) Add(new CanaryPanel());
 
+            _hint = new Label
+            {
+                Name = "LayoutHint",
+                Visible = false,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+                Position = new Vector2(24, 940),
+                Text = $"OSSUARY LAYOUT MODE — drag panels · {_settings.LayoutKey} to finish",
+            };
+            _hint.AddThemeColorOverride("font_color", new Color(0.42f, 0.78f, 0.70f));
+            _root.AddChild(_hint);
+
             Visible = _settings.HudVisible;
-            Log.Info($"HUD showing {_panels.Count} panel(s); toggle with {_settings.ToggleKey}");
+            Log.Info(
+                $"HUD showing {_panels.Count} panel(s); {_settings.ToggleKey} toggles, "
+                + $"{_settings.LayoutKey} moves");
         }
         catch (Exception ex)
         {
@@ -92,20 +112,130 @@ public partial class HudController : CanvasLayer
     public override void _UnhandledKeyInput(InputEvent @event)
     {
         // _Unhandled* runs only after the game's own UI has declined the key, so
-        // the hotkey can never steal input from a menu or a text field.
+        // the hotkeys can never steal input from a menu or a text field.
         if (@event is not InputEventKey key || !key.Pressed || key.Echo) return;
-        if (key.Keycode != _settings.ToggleKeyCode) return;
 
-        Visible = !Visible;
-        _settings.HudVisible = Visible;
+        if (key.Keycode == _settings.ToggleKeyCode)
+        {
+            SetHudVisible(!Visible);
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+
+        if (key.Keycode == _settings.LayoutKeyCode)
+        {
+            SetLayoutMode(!_layoutMode);
+            GetViewport().SetInputAsHandled();
+        }
+    }
+
+    /// <summary>
+    /// Drags panels while layout mode is on.
+    /// </summary>
+    /// <remarks>
+    /// Reading the mouse here rather than through control hit-testing is what
+    /// lets every panel stay <c>MouseFilter.Ignore</c> permanently. Events are
+    /// marked handled only when a drag actually consumes them, so an ordinary
+    /// click in layout mode still reaches the game.
+    /// </remarks>
+    public override void _Input(InputEvent @event)
+    {
+        if (!_layoutMode || !Visible) return;
+
+        switch (@event)
+        {
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } down:
+            {
+                var panel = PanelAt(down.Position);
+                if (panel?.Root is null) return;
+                _dragging = panel;
+                _dragGrip = down.Position - panel.Root.GlobalPosition;
+                GetViewport().SetInputAsHandled();
+                break;
+            }
+
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false }:
+            {
+                if (_dragging is null) return;
+                _dragging = null;
+                SavePlacements();
+                GetViewport().SetInputAsHandled();
+                break;
+            }
+
+            case InputEventMouseMotion motion:
+            {
+                if (_dragging?.Root is null) return;
+                _dragging.Root.GlobalPosition = motion.Position - _dragGrip;
+                GetViewport().SetInputAsHandled();
+                break;
+            }
+        }
+    }
+
+    private HudPanel? PanelAt(Vector2 point)
+    {
+        // Last drawn wins, so the panel visually on top is the one grabbed.
+        for (var i = _panels.Count - 1; i >= 0; i--)
+        {
+            var root = _panels[i].Root;
+            if (root is not null && root.GetGlobalRect().HasPoint(point)) return _panels[i];
+        }
+
+        return null;
+    }
+
+    private void SetHudVisible(bool visible)
+    {
+        Visible = visible;
+        _settings.HudVisible = visible;
+        // Layout mode on an invisible HUD would silently eat clicks.
+        if (!visible && _layoutMode) SetLayoutMode(false);
         _settings.Save();
-        GetViewport().SetInputAsHandled();
-        Log.Info($"HUD {(Visible ? "shown" : "hidden")}");
+        Log.Info($"HUD {(visible ? "shown" : "hidden")}");
+    }
+
+    private void SetLayoutMode(bool on)
+    {
+        // Entering layout mode on a hidden HUD would be a no-op the player
+        // cannot see, so show it instead of doing nothing.
+        if (on && !Visible) SetHudVisible(true);
+
+        _layoutMode = on;
+        if (_hint is not null) _hint.Visible = on;
+        if (_root is not null) _root.Modulate = on ? new Color(1f, 1f, 1f, 0.85f) : Colors.White;
+
+        if (!on)
+        {
+            _dragging = null;
+            SavePlacements();
+        }
+
+        Log.Info($"layout mode {(on ? "on — drag panels" : "off")}");
+    }
+
+    private void SavePlacements()
+    {
+        foreach (var panel in _panels)
+        {
+            if (panel.Root is null) continue;
+            var at = panel.Root.Position;
+            _settings.Panels[panel.Name] = new PanelPlacement { X = at.X, Y = at.Y };
+        }
+
+        _settings.Save();
     }
 
     private void Add(HudPanel panel)
     {
         if (!panel.TryBuild() || panel.Root is null) return;
+
+        // A saved position wins over the panel's built-in default.
+        if (_settings.Panels.TryGetValue(panel.Name, out var placement))
+        {
+            panel.Root.Position = new Vector2(placement.X, placement.Y);
+        }
+
         _root?.AddChild(panel.Root);
         _panels.Add(panel);
     }
