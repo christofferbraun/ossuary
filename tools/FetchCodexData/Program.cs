@@ -103,6 +103,20 @@ internal static class Program
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Ossuary-data-fetch (+https://github.com/christofferbraun/ossuary)");
 
+        if (args.Contains("--harvest-lifts"))
+        {
+            // v2 groundwork: the pairwise model behind Codex's draft advice.
+            // Deliberately not part of the weekly refresh - it is one request
+            // per card and takes the better part of an hour. It discovers its
+            // own pacing, so it runs before the ratings path does.
+            //
+            // --tier lets a caller pace to a higher published tier if Codex
+            // ever grants one; unregistered callers get the general tier.
+            var tierIndex = Array.IndexOf(args, "--tier");
+            var tier = tierIndex >= 0 && tierIndex + 1 < args.Length ? args[tierIndex + 1] : "general";
+            return await HarvestLifts.Run(http, BaseUrl, repoRoot, tier);
+        }
+
         _limit = await RateLimit.Discover(http, BaseUrl, "general");
         Console.WriteLine($"rate limit: {_limit}");
 
