@@ -25,9 +25,12 @@ internal static class Program
     /// <remarks>
     /// The figure that used to be hardcoded here said Codex allows 60/minute.
     /// Their live <c>/api/rate-limits</c> reports 15/minute for an unregistered
-    /// caller — and their API did start refusing us mid-development, which is
-    /// what a limit being exceeded looks like. Reading the published figure
-    /// removes the guess.
+    /// caller. Reading the published figure removes the guess.
+    ///
+    /// Their API did refuse us during development, and that was initially put
+    /// down to this limit. It was not: with everything else answering in under
+    /// 200ms, every <c>/api/runs/*</c> endpoint was returning 502 or timing
+    /// out. Pacing is still worth doing — but it was not the cause.
     ///
     /// Their limits are scoped <b>per endpoint</b>, which is why this refresh is
     /// cheap regardless: seven requests over six endpoints, none hit more than

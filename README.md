@@ -151,11 +151,16 @@ src/Ossuary/Data/      the bundled rating table, embedded into the DLL
 src/Ossuary.Grading/   tier banding, confidence, and the table reader —
                        references nothing from the game
 tests/                 unit tests for the above, runnable without the game
-tools/                 build, install, log and crash-inspection scripts
+tools/                 build, install, log, crash, package and publish scripts
 tools/FetchCodexData/  build-time only: refetches and regrades the table
+workshop/              Steam Workshop metadata and preview image
 CHANGELOG.md           every version, and what changed in it
 docs/ROADMAP.md        what is shipped, what is in flight, and why
 docs/COMPAT.md         every hook and patch, and the build it was verified against
+docs/COMPLIANCE.md     whether this may exist and be published, with the evidence
+docs/RELEASING.md      how a version reaches the Workshop
+docs/COMPLIANCE.md     whether this may exist and be published, with the evidence
+docs/RELEASING.md      how a version reaches the Workshop
 ```
 
 `Ossuary.Grading` is kept free of game references on purpose: it is the part

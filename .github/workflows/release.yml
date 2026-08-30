@@ -1,0 +1,118 @@
+name: Release
+
+# Gates a version tag on the things CI can actually check, and cuts the GitHub
+# release. It does not build the mod and it does not publish to the Workshop —
+# see docs/RELEASING.md for why both are local steps:
+#
+#   * the mod assembly references sts2.dll, 0Harmony.dll and GodotSharp.dll from
+#     a Slay the Spire 2 install. Those are proprietary and not redistributable,
+#     so no hosted runner can compile it.
+#   * Mega Crit's uploader calls SteamAPI.InitEx(), which needs a running Steam
+#     client signed into an account that owns the game. A hosted runner has
+#     neither.
+#
+# What this does do is make a bad tag fail before anyone publishes from it.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: Verify the release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Test the game-independent logic
+        run: dotnet test tests/Ossuary.Grading.Tests/Ossuary.Grading.Tests.csproj -c Release --verbosity normal
+
+      - name: The tag must match the version in Directory.Build.props
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re, sys
+          xml = open("Directory.Build.props", encoding="utf-8").read()
+          m = re.search(r"<Version>([^<]+)</Version>", xml)
+          if not m:
+              sys.exit("no <Version> in Directory.Build.props")
+          declared, tagged = m.group(1), os.environ["TAG"].lstrip("v")
+          print(f"declared={declared} tagged={tagged}")
+          if declared != tagged:
+              sys.exit(f"Tag {os.environ['TAG']} does not match <Version>{declared}</Version>.")
+          PY
+
+
+      - name: The mod manifest must still declare it changes nothing
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, sys
+          m = json.load(open("src/Ossuary/Ossuary.json"))
+          if m.get("affects_gameplay") is not False:
+              sys.exit("Ossuary.json must declare affects_gameplay: false — it reads and displays only.")
+          if not m.get("min_game_version"):
+              sys.exit("Ossuary.json is missing min_game_version.")
+          print("manifest ok:", m["id"], m["min_game_version"])
+          PY
+
+      - name: The Workshop metadata must be publishable
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, sys
+          w = json.load(open("workshop/workshop.json"))
+          for field in ("title", "description", "visibility"):
+              if not w.get(field):
+                  sys.exit(f"workshop.json is missing {field}")
+          if w["visibility"] not in {"private", "public", "unlisted", "friends_only"}:
+              sys.exit(f"workshop.json has an unknown visibility: {w['visibility']}")
+          size = os.path.getsize("workshop/image.png")
+          if size >= 1024 * 1024:
+              sys.exit(f"workshop/image.png is {size} bytes; Steam's limit is 1 MB")
+          # Publishing without the item id creates a second Workshop item rather
+          # than updating the one people are subscribed to. A warning, not a
+          # failure: the very first release legitimately has no id yet.
+          if not os.path.exists("workshop/mod_id.txt"):
+              print("::warning::workshop/mod_id.txt is absent — publishing will CREATE a new Workshop item.")
+          print("workshop metadata ok:", w["title"], "visibility:", w["visibility"])
+          PY
+
+      - name: The bundled ratings must be present and current
+        run: |
+          set -euo pipefail
+          head -5 src/Ossuary/Data/ratings.tsv
+          rows=$(grep -vc '^#' src/Ossuary/Data/ratings.tsv)
+          echo "rating rows: $rows"
+          if [ "$rows" -lt 800 ]; then
+            echo "::error::Only $rows rating rows; the table looks truncated."
+            exit 1
+          fi
+
+      - name: Create the GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Ossuary $GITHUB_REF_NAME" \
+            --generate-notes \
+            --notes-start-tag "$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || echo '')" \
+            --draft \
+          || gh release create "$GITHUB_REF_NAME" --title "Ossuary $GITHUB_REF_NAME" --generate-notes --draft
+
+      - name: Remind that publishing is local
+        run: |
+          echo "::notice::Verified. The mod build and the Workshop upload are local steps — run tools\\package.ps1 then tools\\publish.ps1. See docs/RELEASING.md."
