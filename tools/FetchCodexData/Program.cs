@@ -20,11 +20,27 @@ internal static class Program
     private const string BaseUrl = "https://spire-codex.com";
 
     /// <summary>
-    /// Codex publishes 60 requests/minute per IP. One request per 1.2s keeps a
-    /// full refresh (36 requests) comfortably inside that without needing to
-    /// handle a 429 at all.
+    /// Pace between requests, discovered rather than assumed.
     /// </summary>
-    private static readonly TimeSpan Throttle = TimeSpan.FromMilliseconds(1200);
+    /// <remarks>
+    /// The figure that used to be hardcoded here said Codex allows 60/minute.
+    /// Their live <c>/api/rate-limits</c> reports 15/minute for an unregistered
+    /// caller — and their API did start refusing us mid-development, which is
+    /// what a limit being exceeded looks like. Reading the published figure
+    /// removes the guess.
+    ///
+    /// Their limits are scoped <b>per endpoint</b>, which is why this refresh is
+    /// cheap regardless: seven requests over six endpoints, none hit more than
+    /// twice. The pacing costs half a minute on a weekly job and removes any
+    /// question of us being the reason they start refusing.
+    /// </remarks>
+    private static RateLimit _limit = null!;
+
+    /// <summary>
+    /// Exit code for "Codex could not be reached". Distinct from both success
+    /// and a real error so the workflow can warn and stop rather than fail.
+    /// </summary>
+    private const int UpstreamUnavailable = 20;
 
     private static readonly string[] Kinds = ["cards", "relics", "potions"];
 
@@ -87,7 +103,25 @@ internal static class Program
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Ossuary-data-fetch (+https://github.com/christofferbraun/ossuary)");
 
-        var status = await GetJsonWithRetry<SnapshotStatus>(http, $"{BaseUrl}/api/runs/snapshot-status");
+        _limit = await RateLimit.Discover(http, BaseUrl, "general");
+        Console.WriteLine($"rate limit: {_limit}");
+
+        SnapshotStatus status;
+        try
+        {
+            status = await GetJsonWithRetry<SnapshotStatus>(http, $"{BaseUrl}/api/runs/snapshot-status");
+        }
+        catch (Exception ex) when (check)
+        {
+            // Codex's /api/runs/* endpoints have gone down independently of the
+            // rest of their API - observed returning 502s and then timing out
+            // while /api/cards and /api/rate-limits answered in under 200ms.
+            // A community service being unavailable is not a failure of ours,
+            // and a weekly cron should not go red for it. Report and skip.
+            Console.WriteLine($"upstream unavailable: {ex.Message}");
+            Console.WriteLine("skipping this run; the bundled data is unchanged");
+            return UpstreamUnavailable;
+        }
 
         Console.WriteLine($"Codex snapshot v{status.Version}, {status.TotalRuns:N0} runs, data through {status.DataThrough}");
 
@@ -108,7 +142,7 @@ internal static class Program
         foreach (var kind in Kinds)
         {
             var inGame = await FetchCompendium(http, kind);
-            await Task.Delay(Throttle);
+            await Task.Delay(_limit.Delay);
 
             foreach (var bracket in Brackets)
             {
@@ -122,7 +156,7 @@ internal static class Program
                         coverage.Add($"{kind} {banded.Count}/{inGame.Count}");
                     }
 
-                    await Task.Delay(Throttle);
+                    await Task.Delay(_limit.Delay);
                 }
             }
         }

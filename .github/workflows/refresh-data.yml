@@ -52,6 +52,13 @@ jobs:
             echo "stale=true" >> "$GITHUB_OUTPUT"
           elif [ "$code" -eq 0 ]; then
             echo "stale=false" >> "$GITHUB_OUTPUT"
+          elif [ "$code" -eq 20 ]; then
+            # Codex's /api/runs/* endpoints have gone down independently of the
+            # rest of their API. Their service being unavailable is not a
+            # failure of ours, and a weekly job should not go red for it - the
+            # bundled data is simply unchanged until next week.
+            echo "::warning::Spire Codex was unreachable; skipping this refresh."
+            echo "stale=false" >> "$GITHUB_OUTPUT"
           else
             echo "fetch-codex-data --check failed with $code"
             exit "$code"
