@@ -77,6 +77,7 @@ public partial class HudController : CanvasLayer
 
             Add(new StatusPanel());
             Add(new DeckPanel(_settings));
+            Add(new ForecastPanel(_settings));
             if (_settings.CanaryPanel) Add(new CanaryPanel());
 
             _hint = new Label

@@ -50,6 +50,8 @@ assumed.
 | --- | --- | --- | --- |
 | `Hook.ModifyHandDraw(state, player, 5m, out _)` | The number of cards drawn next turn is computed each turn and discarded; nothing stores it. This is the same call `CombatManager` makes, so the answer is exactly what the game will do. | Decompiled every implementation: 17 `ModifyHandDraw` overrides (9 relics, 8 powers) and the 1 `ModifyHandDrawLate` override (`Fiddle`). All are pure — they read state and return a number, and none assigns to a field or property. `Hook.ModifyHandDraw` itself only iterates and accumulates. | `v0.107.1` |
 
+| `AttackIntent.GetTotalDamage(targets, owner)` and `.Repeats` | The incoming-damage forecast. Going through the game's own calculation is what makes strength, vulnerable and weak correct without reimplementing them. | The game already calls `GetTotalDamage` itself from `AttackIntent.GetTexture` and `GetAnimation`, to pick the intent sprite and animation — it is a rendering path invoked on every intent update. Separately, all 38 damage modifiers were decompiled (12 `ModifyDamageAdditive`, 26 `ModifyDamageMultiplicative`, 3 `ModifyDamageCap`); none assigns to a field or property. | `v0.107.1` |
+
 Two caveats, both deliberate:
 
 - The dispatch iterates *all* hook listeners, including models contributed by
@@ -84,6 +86,7 @@ from community documentation.
 | A mod receives hooks by returning its own `AbstractModel` instances from `ModHelper.SubscribeForRunStateHooks(string, RunHookSubscriptionDelegate)` / `SubscribeForCombatStateHooks` | `sts2.xml`: "custom model types to a RunState when IterateHookListeners is called" |
 | `RunHookSubscriptionDelegate` is `IEnumerable<AbstractModel> (RunState)`; the combat twin takes `CombatState` | reflection over `sts2.dll` |
 | `AbstractModel` is abstract with a **protected parameterless constructor** — subclassable by a mod | reflection over `sts2.dll` |
+| Enemy intents are reachable as public state: `Creature.Monster.NextMove.Intents` → `IReadOnlyList<AbstractIntent>`, with `AttackIntent` exposing `GetSingleDamage`, `GetTotalDamage` and `Repeats`. No label parsing or sprite inspection is needed — the fallback the plan reserved for M4 is not required | reflection over `sts2.dll`; 16 intent subclasses, of which `SingleAttackIntent`, `MultiAttackIntent` and `DeathBlowIntent` carry damage |
 | `NRun.GlobalUi` → `NGlobalUi : Godot.Control`, exposing `TopBar`, `Overlays`, `CardPreviewContainer`, `AboveTopBarVfxContainer` as parenting targets | reflection over `sts2.dll` |
 | **Godot source generators fire for a mod assembly.** `Ossuary.Hud.HudController : CanvasLayer` compiles with the full interop bridge (`InvokeGodotClassMethod`, `HasGodotClassMethod`, `GetGodotMethodList`, `SaveGodotObjectData`) — the same shape the game's own `NRun` carries | reflection over the built `Ossuary.dll` |
 
