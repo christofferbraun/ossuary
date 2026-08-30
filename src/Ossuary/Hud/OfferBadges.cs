@@ -74,6 +74,7 @@ internal sealed class OfferBadges
 
     private readonly OssuarySettings _settings;
     private readonly List<Node> _found = new();
+    private readonly List<Node> _stale = new();
 
     private DateTime _lastScan = DateTime.MinValue;
     private bool _announced;
@@ -98,8 +99,13 @@ internal sealed class OfferBadges
         try
         {
             _found.Clear();
-            Collect(root, _found);
+            _stale.Clear();
+            Collect(root, _found, _stale);
             DropRedundantRows(_found);
+
+            // Recycled nodes first, always - a badge on something that is no
+            // longer an offer is wrong whether or not the feature is on.
+            foreach (var node in _stale) Remove(node);
 
             if (!wanted || _found.Count > ImplausibleCandidates)
             {
@@ -116,20 +122,36 @@ internal sealed class OfferBadges
         }
     }
 
-    /// <summary>Walks the scene collecting things currently on offer.</summary>
-    private static void Collect(Node node, List<Node> into)
+    /// <summary>
+    /// Walks the scene collecting things on offer, and anything still wearing a
+    /// badge that should not be.
+    /// </summary>
+    /// <remarks>
+    /// The second list is not an afterthought. <c>NCard</c> is
+    /// <c>IPoolable</c> — the game recycles card nodes — so a badge added to a
+    /// card on a reward screen rides that node into whatever it is reused for
+    /// next. Without sweeping them, badges leak onto screens that never offered
+    /// anything.
+    /// </remarks>
+    private static void Collect(Node node, List<Node> offers, List<Node> stale)
     {
         // Our own HUD holds no offers and walking it wastes the budget.
         if (node.Name == "OssuaryHud") return;
 
-        if (IsOffered(node)) into.Add(node);
+        if (IsOffered(node)) offers.Add(node);
+        else if (node.GetNodeOrNull(new NodePath(BadgeName)) is not null) stale.Add(node);
 
-        foreach (var child in node.GetChildren()) Collect(child, into);
+        foreach (var child in node.GetChildren()) Collect(child, offers, stale);
     }
 
     private static bool IsOffered(Node node) => node switch
     {
-        NCard card => card.Model is { Pile: null } model && Array.IndexOf(Offerable, model.Type) >= 0,
+        // Pile is null for a card you have not been dealt yet. DeckVersion is
+        // set on a card that is a *view* of one already in your deck, which is
+        // what the upgrade and deck-inspection screens show - those are not
+        // offers, and were being annotated as though they were.
+        NCard card => card.Model is { Pile: null, DeckVersion: null } model
+                      && Array.IndexOf(Offerable, model.Type) >= 0,
         NRelic relic => relic.Model is not null && !HasAncestor<NRelicInventory>(relic),
         NPotion potion => potion.Model is not null && !HasAncestor<NPotionContainer>(potion),
 
@@ -181,8 +203,15 @@ internal sealed class OfferBadges
 
         if (node.GetNodeOrNull(new NodePath(BadgeName)) is Label existing)
         {
+            // Every visual property is re-applied, not just the text. NCard is
+            // pooled, so a node that showed a B-tier card and is recycled for an
+            // F-tier one would otherwise keep the old colour while the numbers
+            // updated - identical cards rendering in different colours, which is
+            // exactly how this was noticed.
             if (existing.Text != text) existing.Text = text;
+            existing.AddThemeColorOverride("font_color", Tint(kind, id));
             existing.AddThemeFontSizeOverride("font_size", size);
+            Place(existing, node);
             return;
         }
 
@@ -201,26 +230,7 @@ internal sealed class OfferBadges
         // Anchored across the bottom edge rather than positioned. The card grows
         // when hovered and the badge grows with it, centred, without any of this
         // code knowing the card's size.
-        if (node is NRewardButton)
-        {
-            // A reward row is wide and already carries its own label, so the
-            // badge sits at the right-hand end rather than across the bottom
-            // where it would land on the row's own text.
-            badge.SetAnchorsPreset(Control.LayoutPreset.CenterRight);
-            badge.HorizontalAlignment = HorizontalAlignment.Right;
-            badge.OffsetLeft = -260;
-            badge.OffsetRight = -10;
-            badge.OffsetTop = -13;
-            badge.OffsetBottom = 13;
-        }
-        else
-        {
-            badge.SetAnchorsPreset(Control.LayoutPreset.BottomWide);
-            badge.OffsetLeft = 2;
-            badge.OffsetRight = -2;
-            badge.OffsetTop = -26;
-            badge.OffsetBottom = -2;
-        }
+        Place(badge, node);
 
         badge.AddThemeColorOverride("font_color", Tint(kind, id));
         badge.AddThemeColorOverride("font_outline_color", new Color(0, 0, 0, 0.95f));
@@ -247,6 +257,55 @@ internal sealed class OfferBadges
             _announced = true;
             Log.Info($"offer ratings: first badge attached to {node.GetType().Name}");
         }
+    }
+
+    /// <summary>
+    /// Puts the badge where it belongs on this kind of host.
+    /// </summary>
+    /// <remarks>
+    /// A card is not laid out the way its control rect suggests. <c>NCard</c>
+    /// draws a fixed <c>defaultSize</c> of 300x422 and grows by changing
+    /// <c>Scale</c> — <c>GetCurrentSize()</c> is literally
+    /// <c>defaultSize * Scale</c> — so its own rect is not the visible card, and
+    /// anchoring to the bottom of that rect landed the badge in the middle of
+    /// the artwork. Positioning in the card's own coordinates against the game's
+    /// constant puts it on the real bottom edge, and because a child inherits
+    /// the parent's scale it still grows with the card on hover.
+    /// </remarks>
+    private static void Place(Label badge, Node host)
+    {
+        const float band = 30f;
+
+        if (host is NRewardButton)
+        {
+            // A reward row is wide and already carries its own label, so the
+            // badge sits at the right-hand end rather than across the bottom
+            // where it would land on the row's own text.
+            badge.SetAnchorsPreset(Control.LayoutPreset.CenterRight);
+            badge.HorizontalAlignment = HorizontalAlignment.Right;
+            badge.OffsetLeft = -270;
+            badge.OffsetRight = -12;
+            badge.OffsetTop = -13;
+            badge.OffsetBottom = 13;
+            return;
+        }
+
+        if (host is NCard)
+        {
+            var card = NCard.defaultSize;
+            badge.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+            badge.Position = new Vector2(6, card.Y - band - 6);
+            badge.Size = new Vector2(card.X - 12, band);
+            return;
+        }
+
+        // Relics and potions are plain icons laid out by their container, so
+        // their control rect is the thing you see.
+        badge.SetAnchorsPreset(Control.LayoutPreset.BottomWide);
+        badge.OffsetLeft = 2;
+        badge.OffsetRight = -2;
+        badge.OffsetTop = -24;
+        badge.OffsetBottom = -1;
     }
 
     private static void Remove(Node node)
