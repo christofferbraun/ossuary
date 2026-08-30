@@ -28,10 +28,7 @@ internal sealed class StatusPanel : HudPanel
             // was supposed to avoid. The real panels parent into the containers
             // NGlobalUi already exposes - TopBar, Overlays, CardPreviewContainer
             // - so they sit beside what they annotate and move with it.
-            OffsetLeft = 24,
-            OffsetTop = 168,
-            OffsetRight = 400,
-            OffsetBottom = 264,
+            Position = new Vector2(24, 168),
         };
 
         var style = new StyleBoxFlat
@@ -50,30 +47,23 @@ internal sealed class StatusPanel : HudPanel
         var box = new VBoxContainer();
         panel.AddChild(box);
 
-        var title = new Label { Text = "OSSUARY" };
-        title.AddThemeColorOverride("font_color", new Color(0.42f, 0.78f, 0.70f));
-        box.AddChild(title);
+        box.AddChild(MakeLabel("OSSUARY", new Color(0.42f, 0.78f, 0.70f)));
 
-        _label = new Label { Text = "attaching…" };
-        _label.AddThemeColorOverride("font_color", new Color(0.89f, 0.91f, 0.89f));
+        _label = MakeLabel("attaching…", new Color(0.89f, 0.91f, 0.89f), 15);
         box.AddChild(_label);
 
         // The bundled ratings have no UI of their own until M5, so report them
         // here: it is the difference between "the table is embedded" as a claim
         // and as something visible in the running game.
         var table = Ratings.Table;
-        var ratings = new Label
-        {
-            Text = table is null
+        box.AddChild(MakeLabel(
+            table is null
                 ? "ratings unavailable"
                 : $"codex v{table.SnapshotVersion} · {table.All(Grading.RatingKind.Card).Count} cards · "
                   + $"{table.All(Grading.RatingKind.Relic).Count} relics · "
                   + $"{table.All(Grading.RatingKind.Potion).Count} potions",
-        };
-        ratings.AddThemeColorOverride(
-            "font_color",
-            table is null ? new Color(0.83f, 0.45f, 0.37f) : new Color(0.62f, 0.67f, 0.64f));
-        box.AddChild(ratings);
+            table is null ? new Color(0.83f, 0.45f, 0.37f) : new Color(0.62f, 0.67f, 0.64f),
+            14));
 
         return panel;
     }

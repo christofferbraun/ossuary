@@ -77,6 +77,66 @@ internal abstract class HudPanel
     /// <summary>Builds the panel's control tree. Called once, before it is shown.</summary>
     protected abstract Control BuildRoot();
 
+    /// <summary>
+    /// Creates a label that remembers the size it was designed at.
+    /// </summary>
+    /// <remarks>
+    /// The intended size is stashed on the node itself so
+    /// <see cref="ApplyTextScale"/> can rescale from the original every time
+    /// rather than compounding — scaling an already-scaled size drifts, and the
+    /// drift is only visible after several adjustments, which is the worst way
+    /// to find a bug.
+    /// </remarks>
+    private protected static Label MakeLabel(string text, Color colour, int baseSize = 16)
+    {
+        var label = new Label { Text = text, MouseFilter = Control.MouseFilterEnum.Ignore };
+        label.AddThemeColorOverride("font_color", colour);
+        label.SetMeta(BaseSizeMeta, baseSize);
+        return label;
+    }
+
+    private const string BaseSizeMeta = "ossuary_base_font_size";
+
+    /// <summary>Re-sizes every label in the panel, relative to its design size.</summary>
+    internal void ApplyTextScale(double scale)
+    {
+        if (Failed || Root is null) return;
+
+        try
+        {
+            Rescale(Root, scale);
+            // The panel is only as big as its contents, so a smaller font must
+            // shrink the box rather than leave it padded with empty space.
+            ShrinkToFit();
+        }
+        catch (Exception ex)
+        {
+            Fail("could not be rescaled", ex);
+        }
+    }
+
+    /// <summary>
+    /// Collapses the panel onto its contents.
+    /// </summary>
+    /// <remarks>
+    /// Panels are parented into a plain <see cref="Control"/> rather than a
+    /// container, so nothing lays them out and their size is whatever it was
+    /// built as. Without this a four-row draw pile occupies the same box as a
+    /// twenty-row one.
+    /// </remarks>
+    private protected void ShrinkToFit() => Root?.ResetSize();
+
+    private static void Rescale(Node node, double scale)
+    {
+        if (node is Label label && label.HasMeta(BaseSizeMeta))
+        {
+            var baseSize = (int)label.GetMeta(BaseSizeMeta);
+            label.AddThemeFontSizeOverride("font_size", Math.Max(6, (int)Math.Round(baseSize * scale)));
+        }
+
+        foreach (var child in node.GetChildren()) Rescale(child, scale);
+    }
+
     /// <summary>Refreshes the panel. Called every frame the HUD is visible.</summary>
     protected virtual void OnTick(double delta) { }
 

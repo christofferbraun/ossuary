@@ -85,10 +85,12 @@ public partial class HudController : CanvasLayer
                 Visible = false,
                 MouseFilter = Control.MouseFilterEnum.Ignore,
                 Position = new Vector2(24, 940),
-                Text = $"OSSUARY LAYOUT MODE — drag panels · {_settings.LayoutKey} to finish",
+                Text = $"OSSUARY LAYOUT MODE — drag panels · - and + resize text · {_settings.LayoutKey} to finish",
             };
             _hint.AddThemeColorOverride("font_color", new Color(0.42f, 0.78f, 0.70f));
             _root.AddChild(_hint);
+
+            ApplyTextScale();
 
             Visible = _settings.HudVisible;
             Log.Info(
@@ -127,7 +129,32 @@ public partial class HudController : CanvasLayer
         {
             SetLayoutMode(!_layoutMode);
             GetViewport().SetInputAsHandled();
+            return;
         }
+
+        // Text size is adjustable only while arranging the HUD. Outside layout
+        // mode these are ordinary keys the game may want.
+        if (!_layoutMode) return;
+
+        var step = key.Keycode switch
+        {
+            Key.Minus or Key.KpSubtract => -0.1,
+            Key.Equal or Key.Plus or Key.KpAdd => 0.1,
+            _ => 0.0,
+        };
+
+        if (step == 0.0) return;
+
+        _settings.TextScale = Math.Round(_settings.ClampedTextScale + step, 2);
+        _settings.Save();
+        ApplyTextScale();
+        GetViewport().SetInputAsHandled();
+        Log.Info($"text scale {_settings.ClampedTextScale:0.0}x");
+    }
+
+    private void ApplyTextScale()
+    {
+        foreach (var panel in _panels) panel.ApplyTextScale(_settings.ClampedTextScale);
     }
 
     /// <summary>

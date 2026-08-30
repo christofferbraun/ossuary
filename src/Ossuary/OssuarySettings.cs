@@ -40,9 +40,21 @@ internal sealed class OssuarySettings
     public Dictionary<string, PanelPlacement> Panels { get; set; } = new();
 
     /// <summary>
-    /// How many cards ahead the draw odds look. Five is a standard hand.
+    /// How many cards ahead the draw odds look when the real draw is unknown.
+    /// Five is a standard hand; the tracker uses the observed draw once it has
+    /// seen a turn begin.
     /// </summary>
     public int DrawLookahead { get; set; } = 5;
+
+    /// <summary>
+    /// Multiplier on every panel's text, so the HUD can be made to fit the
+    /// player's screen and taste. Clamped on read rather than on write, so a
+    /// hand-edited file cannot produce an unreadable HUD with no way back.
+    /// </summary>
+    public double TextScale { get; set; } = 1.0;
+
+    [JsonIgnore]
+    public double ClampedTextScale => Math.Clamp(TextScale, 0.5, 2.5);
 
     /// <summary>
     /// Adds a panel whose only purpose is to throw, proving that one failing

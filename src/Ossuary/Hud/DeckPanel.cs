@@ -17,27 +17,38 @@ namespace Ossuary.Hud;
 /// </remarks>
 internal sealed class DeckPanel : HudPanel
 {
-    private const int MaxRows = 14;
+    /// <summary>
+    /// Rows past this are summarised rather than listed. A tracker that grows
+    /// taller than the screen has stopped being readable, and the tail of a long
+    /// pile is the part nobody is deciding on.
+    /// </summary>
+    private const int MaxRows = 16;
+
+    private const int Columns = 4;
+
+    private static readonly Color Ink = new(0.89f, 0.91f, 0.89f);
+    private static readonly Color Dim = new(0.51f, 0.55f, 0.53f);
+    private static readonly Color Accent = new(0.42f, 0.78f, 0.70f);
 
     private readonly OssuarySettings _settings;
 
     private Label? _header;
-    private VBoxContainer? _rows;
+    private GridContainer? _grid;
     private Label? _types;
-    private Label? _empty;
+    private Label? _idle;
+    private int _shownRows = -1;
 
     internal DeckPanel(OssuarySettings settings) : base("deck")
         => _settings = settings;
 
     protected override Control BuildRoot()
     {
+        // Position only: no explicit size. The panel is collapsed onto its
+        // contents after every update, so four rows occupy a four-row box.
         var panel = new PanelContainer
         {
             Name = "OssuaryDeck",
-            OffsetLeft = 24,
-            OffsetTop = 300,
-            OffsetRight = 420,
-            OffsetBottom = 760,
+            Position = new Vector2(24, 300),
         };
 
         var style = new StyleBoxFlat
@@ -56,19 +67,20 @@ internal sealed class DeckPanel : HudPanel
         var box = new VBoxContainer();
         panel.AddChild(box);
 
-        _header = new Label { Text = "DRAW PILE" };
-        _header.AddThemeColorOverride("font_color", new Color(0.42f, 0.78f, 0.70f));
+        _header = MakeLabel("DRAW PILE", Accent);
         box.AddChild(_header);
 
-        _empty = new Label { Text = "not in combat" };
-        _empty.AddThemeColorOverride("font_color", new Color(0.51f, 0.55f, 0.53f));
-        box.AddChild(_empty);
+        _idle = MakeLabel("not in combat", Dim, 15);
+        box.AddChild(_idle);
 
-        _rows = new VBoxContainer();
-        box.AddChild(_rows);
+        // A grid rather than padded text: columns line up under a proportional
+        // font, which space-padding cannot do.
+        _grid = new GridContainer { Columns = Columns, MouseFilter = Control.MouseFilterEnum.Ignore };
+        _grid.AddThemeConstantOverride("h_separation", 12);
+        _grid.AddThemeConstantOverride("v_separation", 2);
+        box.AddChild(_grid);
 
-        _types = new Label { Text = "" };
-        _types.AddThemeColorOverride("font_color", new Color(0.51f, 0.55f, 0.53f));
+        _types = MakeLabel("", Dim, 14);
         box.AddChild(_types);
 
         return panel;
@@ -99,68 +111,92 @@ internal sealed class DeckPanel : HudPanel
 
     private void Render(IReadOnlyList<TrackedCard> draw)
     {
-        if (_rows is null || _header is null || _types is null || _empty is null) return;
+        if (_grid is null || _header is null || _types is null || _idle is null) return;
 
-        _empty.Visible = false;
-        _rows.Visible = true;
+        _idle.Visible = false;
+        _grid.Visible = true;
 
-        var lookahead = _settings.DrawLookahead;
-        _header.Text = $"DRAW PILE  {draw.Count}   ·   odds over {lookahead}";
+        // How many cards the next turn's draw will be. The game recomputes this
+        // each turn by dispatching modifiers across every model and keeps no
+        // readable copy, so it is taken from the last draw actually seen — which
+        // already accounts for whatever relics and powers are in play. Until a
+        // draw has been observed, the configured default stands in, and the
+        // header says so rather than presenting an assumption as a measurement.
+        var observed = DrawObserver.LastHandDraw;
+        var lookahead = observed ?? _settings.DrawLookahead;
+        var qualifier = observed is null ? "~" : "";
+        _header.Text = $"DRAW PILE  {draw.Count}   ·   odds over {qualifier}{lookahead}";
 
         var groups = DeckGrouping.Group(draw);
-        Fit(groups.Count);
+        var rows = Math.Min(groups.Count, MaxRows);
+        Fit(rows);
 
-        for (var i = 0; i < _rows.GetChildCount(); i++)
+        for (var row = 0; row < _grid.GetChildCount() / Columns; row++)
         {
-            if (_rows.GetChild(i) is not Label label) continue;
+            var visible = row < rows;
+            var cells = Cells(row);
+            foreach (var cell in cells) cell.Visible = visible;
+            if (!visible) continue;
 
-            if (i >= groups.Count)
-            {
-                label.Visible = false;
-                continue;
-            }
-
-            var g = groups[i];
-            label.Visible = true;
-            var name = g.UpgradeLevel > 0 ? $"{g.Title}+" : g.Title;
-            var copies = g.Count > 1 ? $"x{g.Count}" : "  ";
-            var cost = g.EnergyCost == TrackedCard.XCost ? "X" : g.EnergyCost.ToString();
-            label.Text = $"{cost}  {name,-22} {copies,-4} {g.OddsIn(draw.Count, lookahead),6:P0}";
+            var g = groups[row];
+            cells[0].Text = g.EnergyCost == TrackedCard.XCost ? "X" : g.EnergyCost.ToString();
+            cells[1].Text = g.UpgradeLevel > 0 ? $"{g.Title}+" : g.Title;
+            cells[2].Text = g.Count > 1 ? $"x{g.Count}" : "";
+            cells[3].Text = $"{g.OddsIn(draw.Count, lookahead):P0}";
         }
 
-        _types.Text = string.Join("   ", DeckGrouping.ByType(draw).Select(t => $"{t.Type} {t.Count}"));
+        var hidden = groups.Count - rows;
+        _types.Text = string.Join("   ", DeckGrouping.ByType(draw).Select(t => $"{t.Type} {t.Count}"))
+            + (hidden > 0 ? $"   (+{hidden} more)" : "");
+
+        // Only when the row count actually changes: ResetSize every frame would
+        // fight a player dragging the panel by its edge.
+        if (_shownRows != rows)
+        {
+            _shownRows = rows;
+            ShrinkToFit();
+        }
     }
 
     private void ShowIdle(string message)
     {
-        if (_empty is null || _rows is null || _types is null || _header is null) return;
+        if (_idle is null || _grid is null || _types is null || _header is null) return;
+        if (_shownRows == 0 && _idle.Text == message) return;
 
         _header.Text = "DRAW PILE";
-        _empty.Text = message;
-        _empty.Visible = true;
-        _rows.Visible = false;
+        _idle.Text = message;
+        _idle.Visible = true;
+        _grid.Visible = false;
         _types.Text = "";
+        _shownRows = 0;
+        ShrinkToFit();
+    }
+
+    private Label[] Cells(int row)
+    {
+        var cells = new Label[Columns];
+        for (var c = 0; c < Columns; c++) cells[c] = (Label)_grid!.GetChild(row * Columns + c);
+        return cells;
     }
 
     /// <summary>
-    /// Grows the row list to fit, reusing labels rather than rebuilding them.
+    /// Grows the grid to fit, reusing cells rather than rebuilding them.
     /// </summary>
-    /// <remarks>
-    /// Freeing and allocating a few dozen nodes every frame would churn the
-    /// scene tree for no reason; rows are created once and then only have their
-    /// text set. Capped so a pathological deck cannot grow the panel without
-    /// limit.
-    /// </remarks>
-    private void Fit(int needed)
+    private void Fit(int rows)
     {
-        if (_rows is null) return;
+        if (_grid is null) return;
 
-        for (var i = _rows.GetChildCount(); i < Math.Min(needed, MaxRows); i++)
+        for (var row = _grid.GetChildCount() / Columns; row < rows; row++)
         {
-            var label = new Label();
-            label.AddThemeColorOverride("font_color", new Color(0.89f, 0.91f, 0.89f));
-            label.AddThemeFontSizeOverride("font_size", 15);
-            _rows.AddChild(label);
+            _grid.AddChild(MakeLabel("", Dim, 15));                       // cost
+            _grid.AddChild(MakeLabel("", Ink, 15));                       // title
+            _grid.AddChild(MakeLabel("", Dim, 15));                       // copies
+            var odds = MakeLabel("", Ink, 15);
+            odds.HorizontalAlignment = HorizontalAlignment.Right;
+            _grid.AddChild(odds);
         }
+
+        // Cells added after the panel was first scaled still need the scale.
+        ApplyTextScale(_settings.ClampedTextScale);
     }
 }
