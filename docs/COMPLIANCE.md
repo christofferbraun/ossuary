@@ -84,16 +84,38 @@ How Ossuary sits against each:
 | --- | --- |
 | Free to use, including commercially | Ossuary is free and MIT-licensed either way |
 | Do not scrape outside the documented public API | Every request goes to a documented endpoint — `/api/runs/snapshot-status`, `/api/runs/metrics/{kind}`, `/api/{kind}`. Nothing is scraped from rendered pages. |
-| Do not degrade the service for others | A refresh is **six requests, at most once a week**, and only when the published snapshot version has actually moved. An installed copy makes **zero** requests. |
+| Do not degrade the service for others | A **typical week is one request** — the check that asks whether the snapshot moved, which usually says no and stops. The weeks it has moved cost **eight**: the check, a snapshot read, three compendium reads and three metrics reads. An installed copy makes **zero**. |
 | Attribution appreciated | Given prominently in the README and in the mod itself |
 
 ### On rate limits specifically
 
 Their terms say 60–120/minute, but the live `/api/rate-limits` endpoint reports
 less for an unregistered caller: **15/minute per endpoint** on the general tier,
-60 when registered. The fetch tool paces to the lower figure (~13/minute) rather
-than the more generous one in the terms. Six requests a week is far inside
-either.
+60 when registered. The fetch tool reads that endpoint at startup and paces to
+whatever it says, falling back to the most conservative tier if it cannot be
+read — so the figure is never a stale guess in the source.
+
+The scope matters as much as the number. Limits are **per endpoint**, and the
+weekly refresh spreads its requests over six different ones, hitting none more
+than twice. It is nowhere near constrained.
+
+The one heavy thing Ossuary could ever ask of them is the v2 lift harvest —
+about 500 requests to a single endpoint. That is why it is a one-off per data
+version rather than anything scheduled, why it paces from the published figure,
+and why it checkpoints so an interrupted run resumes instead of starting the 500
+again. See `V2.md`.
+
+### A correction worth recording
+
+Codex's API refused us during development, and that was initially assumed to be
+us exceeding the rate limit. It was not. Measured on 2026-08-30: every
+`/api/runs/*` endpoint returned 502 or timed out while `/api/cards`,
+`/api/relics` and `/api/rate-limits` answered in under 200 ms. That is their
+runs subsystem being unwell, independent of anything we did.
+
+The pacing is still right, and the weekly workflow now treats an unreachable
+Codex as "nothing to do this week" rather than a failure — a community service
+being down is not our error to raise an alarm about.
 
 ## 4. Publishing to the Steam Workshop
 
