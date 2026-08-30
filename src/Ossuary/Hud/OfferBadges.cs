@@ -1,7 +1,10 @@
 using Godot;
+using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Nodes.Cards;
 using MegaCrit.Sts2.Core.Nodes.Potions;
 using MegaCrit.Sts2.Core.Nodes.Relics;
+using MegaCrit.Sts2.Core.Nodes.Rewards;
+using MegaCrit.Sts2.Core.Rewards;
 using Ossuary.Grading;
 
 namespace Ossuary.Hud;
@@ -11,34 +14,35 @@ namespace Ossuary.Hud;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The badge is parented to the game's own node, so it moves with the thing it
-/// annotates, disappears when the offer does, and needs no coordinate maths of
-/// its own. That is the whole reason for building this as a mod rather than an
-/// overlay: an external tool has to guess where a card is on screen and re-guess
-/// every time the game's layout changes.
+/// The badge is parented to the game's own node and anchored across its bottom
+/// edge, so it moves with the thing it annotates, grows with it when you hover,
+/// and disappears when the offer does. That is the whole reason for building
+/// this as a mod rather than an overlay: an external tool has to guess where a
+/// card is and re-guess every time the game's layout or its hover animation
+/// changes.
 /// </para>
 /// <para>
 /// <b>Which nodes get a badge.</b> Not by screen — enumerating every screen that
-/// can offer something is a list that would silently go stale. Instead, by what
-/// the model is doing:
+/// can offer something is a list that would silently go stale. By what the model
+/// is doing instead:
 /// </para>
 /// <list type="bullet">
-/// <item>a <see cref="CardModel"/> in no pile at all is being offered, not held
-/// — cards in hand, draw, discard, exhaust or the deck all report their pile</item>
+/// <item>a <see cref="CardModel"/> in no pile at all is being offered rather
+/// than held — cards in hand, draw, discard, exhaust or the deck all report
+/// their pile</item>
+/// <item>and its type is one you can actually be offered. A Status or a Curse
+/// is put into your deck <em>against your will</em>, so rating it is noise: it
+/// was never a choice. This is also what stops a Slimed handed to you mid-combat
+/// from being annotated as though you had picked it.</item>
 /// <item>a relic outside <c>NRelicInventory</c> is not yet yours</item>
 /// <item>a potion outside <c>NPotionContainer</c> is not yet in your belt</item>
 /// </list>
 /// <para>
-/// That covers reward, choose-a-card, shop and ancient screens without naming
-/// any of them, and excludes everything you already own.
-/// </para>
-/// <para>
 /// <b>Safety.</b> This adds children to game-owned nodes, which is the most
 /// invasive thing Ossuary does, so it is bounded on every side: it only ever
 /// adds a <see cref="Label"/>, it never changes a property of a game node, it
-/// gives up if it finds an implausible number of candidates (the signature of
-/// the pile rule being wrong after a patch), it can be turned off in settings,
-/// and hiding the HUD removes every badge. Nothing here can alter a run.
+/// gives up if it finds an implausible number of candidates, it can be turned
+/// off in settings, and hiding the HUD removes every badge.
 /// </para>
 /// </remarks>
 internal sealed class OfferBadges
@@ -49,14 +53,24 @@ internal sealed class OfferBadges
     /// Above this many candidates, do nothing.
     /// </summary>
     /// <remarks>
-    /// An offer screen shows a handful. Finding dozens means the rule for "is
-    /// this being offered" has stopped being true — most likely a game update —
-    /// and covering the screen in labels is a worse failure than showing none.
+    /// An offer screen shows a handful. Dozens means either the rule for "is
+    /// this being offered" has stopped being true, or we are looking at a
+    /// compendium screen showing the whole card pool — and covering either in
+    /// labels is worse than showing none.
     /// </remarks>
     private const int ImplausibleCandidates = 20;
 
-    /// <summary>Scanning the scene four times a second is imperceptible and cheap.</summary>
+    /// <summary>Scanning four times a second is imperceptible and cheap.</summary>
     private static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// The only card types you are ever asked to choose.
+    /// </summary>
+    /// <remarks>
+    /// Everything else — Status, Curse, Quest — arrives without being picked,
+    /// so a rating on it answers a question nobody asked.
+    /// </remarks>
+    private static readonly CardType[] Offerable = [CardType.Attack, CardType.Skill, CardType.Power];
 
     private readonly OssuarySettings _settings;
     private readonly List<Node> _found = new();
@@ -75,28 +89,20 @@ internal sealed class OfferBadges
     {
         if (_failed) return;
 
-        var wanted = hudVisible && _settings.OfferRatings;
-
         var now = DateTime.UtcNow;
         if (now - _lastScan < Interval) return;
         _lastScan = now;
+
+        var wanted = hudVisible && _settings.OfferRatings;
 
         try
         {
             _found.Clear();
             Collect(root, _found);
+            DropRedundantRows(_found);
 
-            if (!wanted)
+            if (!wanted || _found.Count > ImplausibleCandidates)
             {
-                foreach (var node in _found) Remove(node);
-                return;
-            }
-
-            if (_found.Count > ImplausibleCandidates)
-            {
-                Log.Warn(
-                    $"offer ratings: {_found.Count} candidates is more than an offer screen shows; "
-                    + "skipping rather than covering the screen in labels");
                 foreach (var node in _found) Remove(node);
                 return;
             }
@@ -110,7 +116,7 @@ internal sealed class OfferBadges
         }
     }
 
-    /// <summary>Walks the run's scene collecting things currently on offer.</summary>
+    /// <summary>Walks the scene collecting things currently on offer.</summary>
     private static void Collect(Node node, List<Node> into)
     {
         // Our own HUD holds no offers and walking it wastes the budget.
@@ -123,13 +129,37 @@ internal sealed class OfferBadges
 
     private static bool IsOffered(Node node) => node switch
     {
-        // A card that reports no pile is not in the deck, the hand, or any
-        // combat pile — so it is being offered.
-        NCard card => card.Model is { Pile: null },
+        NCard card => card.Model is { Pile: null } model && Array.IndexOf(Offerable, model.Type) >= 0,
         NRelic relic => relic.Model is not null && !HasAncestor<NRelicInventory>(relic),
         NPotion potion => potion.Model is not null && !HasAncestor<NPotionContainer>(potion),
+
+        // A reward row, for the cases where the reward draws no node of its own.
+        // PotionReward overrides CreateIcon and produces an NPotion, which the
+        // case above already catches; RelicReward does not, so a relic offered
+        // as a reward - Neow's opening choice among them - had nothing to badge.
+        NRewardButton button => button.Reward is RelicReward or PotionReward,
         _ => false,
     };
+
+    /// <summary>
+    /// Drops reward rows whose contents were collected in their own right, so a
+    /// potion reward is annotated once rather than twice.
+    /// </summary>
+    private static void DropRedundantRows(List<Node> found)
+    {
+        found.RemoveAll(node =>
+            node is NRewardButton && found.Any(other => other != node && IsDescendantOf(other, node)));
+    }
+
+    private static bool IsDescendantOf(Node node, Node ancestor)
+    {
+        for (var parent = node.GetParent(); parent is not null; parent = parent.GetParent())
+        {
+            if (parent == ancestor) return true;
+        }
+
+        return false;
+    }
 
     private static bool HasAncestor<T>(Node node) where T : Node
     {
@@ -147,9 +177,12 @@ internal sealed class OfferBadges
         if (id is null) return;
 
         var text = Describe(kind, id);
+        var size = Math.Max(9, (int)Math.Round(15 * _settings.ClampedTextScale));
+
         if (node.GetNodeOrNull(new NodePath(BadgeName)) is Label existing)
         {
             if (existing.Text != text) existing.Text = text;
+            existing.AddThemeFontSizeOverride("font_size", size);
             return;
         }
 
@@ -160,15 +193,52 @@ internal sealed class OfferBadges
             Name = BadgeName,
             Text = text,
             MouseFilter = Control.MouseFilterEnum.Ignore,
-            // Just above the node's top-left, which is clear of the art and the
-            // title on every surface these appear on.
-            Position = new Vector2(0, -24),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
             ZIndex = 50,
         };
+
+        // Anchored across the bottom edge rather than positioned. The card grows
+        // when hovered and the badge grows with it, centred, without any of this
+        // code knowing the card's size.
+        if (node is NRewardButton)
+        {
+            // A reward row is wide and already carries its own label, so the
+            // badge sits at the right-hand end rather than across the bottom
+            // where it would land on the row's own text.
+            badge.SetAnchorsPreset(Control.LayoutPreset.CenterRight);
+            badge.HorizontalAlignment = HorizontalAlignment.Right;
+            badge.OffsetLeft = -260;
+            badge.OffsetRight = -10;
+            badge.OffsetTop = -13;
+            badge.OffsetBottom = 13;
+        }
+        else
+        {
+            badge.SetAnchorsPreset(Control.LayoutPreset.BottomWide);
+            badge.OffsetLeft = 2;
+            badge.OffsetRight = -2;
+            badge.OffsetTop = -26;
+            badge.OffsetBottom = -2;
+        }
+
         badge.AddThemeColorOverride("font_color", Tint(kind, id));
-        badge.AddThemeColorOverride("font_outline_color", new Color(0, 0, 0, 0.9f));
-        badge.AddThemeConstantOverride("outline_size", 4);
-        badge.AddThemeFontSizeOverride("font_size", Math.Max(8, (int)Math.Round(15 * _settings.ClampedTextScale)));
+        badge.AddThemeColorOverride("font_outline_color", new Color(0, 0, 0, 0.95f));
+        badge.AddThemeConstantOverride("outline_size", 5);
+        badge.AddThemeFontSizeOverride("font_size", size);
+
+        // A backing plate, because the card art underneath is arbitrary and an
+        // outline alone was not enough to read against all of it.
+        var plate = new StyleBoxFlat
+        {
+            BgColor = new Color(0.04f, 0.05f, 0.05f, 0.72f),
+            CornerRadiusTopLeft = 3,
+            CornerRadiusTopRight = 3,
+            CornerRadiusBottomLeft = 3,
+            CornerRadiusBottomRight = 3,
+        };
+        plate.SetContentMarginAll(2);
+        badge.AddThemeStyleboxOverride("normal", plate);
 
         host.AddChild(badge);
 
@@ -190,6 +260,8 @@ internal sealed class OfferBadges
         NCard card => (RatingKind.Card, card.Model?.Id.ToString()),
         NRelic relic => (RatingKind.Relic, relic.Model?.Id.ToString()),
         NPotion potion => (RatingKind.Potion, potion.Model?.Id.ToString()),
+        NRewardButton { Reward: RelicReward relic } => (RatingKind.Relic, relic.Relic?.Id.ToString()),
+        NRewardButton { Reward: PotionReward potion } => (RatingKind.Potion, potion.Potion?.Id.ToString()),
         _ => (RatingKind.Card, null),
     };
 
@@ -211,8 +283,7 @@ internal sealed class OfferBadges
         var table = Ratings.Table;
         if (table is null || !table.TryGet(kind, id, out var entry)) return "no data";
 
-        var parts = new List<string>(4) { $"{entry.Tier}  {entry.Score}" };
-        parts.Add($"{entry.WinRate:0.#}% win");
+        var parts = new List<string>(4) { $"{entry.Tier} {entry.Score}", $"{entry.WinRate:0.#}% win" };
         if (entry.PickRate is { } pick) parts.Add($"{pick:0.#}% pick");
         if (entry.Confidence == Confidence.Low) parts.Add("low sample");
 
@@ -222,16 +293,16 @@ internal sealed class OfferBadges
     private static Color Tint(RatingKind kind, string id)
     {
         var table = Ratings.Table;
-        if (table is null || !table.TryGet(kind, id, out var entry)) return new Color(0.55f, 0.58f, 0.56f);
+        if (table is null || !table.TryGet(kind, id, out var entry)) return new Color(0.60f, 0.63f, 0.61f);
 
         return entry.Tier switch
         {
-            Tier.S => new Color(0.45f, 0.85f, 0.62f),
-            Tier.A => new Color(0.62f, 0.85f, 0.52f),
-            Tier.B => new Color(0.80f, 0.84f, 0.52f),
-            Tier.C => new Color(0.85f, 0.75f, 0.45f),
-            Tier.D => new Color(0.87f, 0.56f, 0.38f),
-            _ => new Color(0.85f, 0.40f, 0.36f),
+            Tier.S => new Color(0.48f, 0.90f, 0.66f),
+            Tier.A => new Color(0.66f, 0.90f, 0.55f),
+            Tier.B => new Color(0.85f, 0.89f, 0.55f),
+            Tier.C => new Color(0.92f, 0.80f, 0.48f),
+            Tier.D => new Color(0.93f, 0.60f, 0.40f),
+            _ => new Color(0.92f, 0.44f, 0.39f),
         };
     }
 }

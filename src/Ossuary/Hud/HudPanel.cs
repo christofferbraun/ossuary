@@ -92,6 +92,7 @@ internal abstract class HudPanel
 
         try
         {
+            ShrinkIfDue();
             OnTick(delta);
         }
         catch (Exception ex)
@@ -141,16 +142,32 @@ internal abstract class HudPanel
         }
     }
 
+    private int _shrinkIn;
+
     /// <summary>
-    /// Collapses the panel onto its contents.
+    /// Collapses the panel onto its contents, once the layout has caught up.
     /// </summary>
     /// <remarks>
     /// Panels are parented into a plain <see cref="Control"/> rather than a
     /// container, so nothing lays them out and their size is whatever it was
     /// built as. Without this a four-row draw pile occupies the same box as a
     /// twenty-row one.
+    ///
+    /// The delay matters. A container's minimum size is recomputed during the
+    /// layout pass, not when a child's font changes, so calling
+    /// <c>ResetSize</c> in the same frame measures the <em>old</em> contents.
+    /// Growing hid this - a box too large for its text still fits - but
+    /// shrinking showed it plainly: the text got smaller on every keypress
+    /// while the box only caught up on the next one.
     /// </remarks>
-    private protected void ShrinkToFit() => Root?.ResetSize();
+    private protected void ShrinkToFit() => _shrinkIn = 2;
+
+    /// <summary>Performs a deferred resize once the layout pass has run.</summary>
+    private void ShrinkIfDue()
+    {
+        if (_shrinkIn <= 0 || Root is null) return;
+        if (--_shrinkIn == 0) Root.ResetSize();
+    }
 
     private static void Rescale(Node node, double scale)
     {

@@ -120,7 +120,14 @@ public partial class HudController : CanvasLayer
         // Runs even when the HUD is hidden: badges hang off the game's own
         // nodes rather than this layer, so hiding the HUD has to actively
         // remove them rather than simply stop drawing.
-        if (GetParent() is { } run) _badges?.Tick(run, Visible);
+        //
+        // Scanned from the viewport root rather than from NRun. Not everything
+        // that offers you something lives under the run - Neow's opening relic
+        // choice is presented before the map exists - and a scan rooted at the
+        // run silently misses those. The candidate cap is what keeps a wider
+        // walk safe.
+        var scanRoot = GetTree()?.Root ?? GetParent();
+        if (scanRoot is not null) _badges?.Tick(scanRoot, Visible);
 
         if (!Visible) return;
 
