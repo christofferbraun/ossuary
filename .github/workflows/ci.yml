@@ -1,10 +1,10 @@
 name: CI
 
 on:
+  # Every branch, not just main. Work here lands by rebasing a feature branch
+  # and fast-forwarding rather than by opening a pull request, so scoping this
+  # to main and pull_request meant feature branches got no CI at all.
   push:
-    branches: [main]
-  # Every other branch is covered on its pull request, so work in progress is
-  # tested without naming each branch here.
   pull_request:
   workflow_dispatch:
 
