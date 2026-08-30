@@ -103,23 +103,54 @@ internal static class Program
 
         var previous = ReadCommittedTiers(outputPath);
         var rows = new List<OutputRow>();
+        var coverage = new List<string>();
 
         foreach (var kind in Kinds)
         {
+            var inGame = await FetchCompendium(http, kind);
+            await Task.Delay(Throttle);
+
             foreach (var bracket in Brackets)
             {
                 foreach (var character in Characters)
                 {
-                    var slice = await FetchSlice(http, kind, bracket, character);
-                    rows.AddRange(Band(kind, bracket, character, slice));
+                    var slice = await FetchSlice(http, kind, bracket, character, inGame);
+                    var banded = Band(kind, bracket, character, slice).ToList();
+                    rows.AddRange(banded);
+                    if (bracket == "all" && character == "all")
+                    {
+                        coverage.Add($"{kind} {banded.Count}/{inGame.Count}");
+                    }
+
                     await Task.Delay(Throttle);
                 }
             }
         }
 
-        Write(outputPath, status, rows);
+        Write(outputPath, status, rows, coverage);
         Report(rows, previous);
         return 0;
+    }
+
+    /// <summary>
+    /// The ids that exist in the game right now, from Codex's compendium.
+    /// </summary>
+    /// <remarks>
+    /// The compendium and the metrics endpoint answer different questions, and
+    /// their counts disagree in both directions. Measured on snapshot v26:
+    /// 577 cards exist but only 520 have run data, while 17 ids with run data
+    /// are no longer in the game at all (relics add 2 more, potions 1).
+    ///
+    /// The gap is not a fault on either side. Curses, statuses, tokens, quest
+    /// cards and event/ancient-pool cards are never offered in a ranked card
+    /// reward, so there is no pick data to have; and Codex's metrics span every
+    /// run ever submitted, including builds where since-removed cards still
+    /// existed.
+    /// </remarks>
+    private static async Task<HashSet<string>> FetchCompendium(HttpClient http, string kind)
+    {
+        var entries = await GetJsonWithRetry<List<CompendiumEntry>>(http, $"{BaseUrl}/api/{kind}");
+        return entries.Select(e => e.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -136,7 +167,7 @@ internal static class Program
     /// look wrong.
     /// </remarks>
     private static async Task<List<MetricRow>> FetchSlice(
-        HttpClient http, string kind, string bracket, string character)
+        HttpClient http, string kind, string bracket, string character, HashSet<string> inGame)
     {
         var url = $"{BaseUrl}/api/runs/metrics/{kind}";
         var query = new List<string>();
@@ -164,7 +195,14 @@ internal static class Program
         // Base ids only. Upgraded rows are a separate entity in Codex's model,
         // and grading them separately would mean an offered card's tier changed
         // depending on whether you happened to be looking at the upgrade.
-        var rows = response.Rows.Where(r => !r.Upgraded).ToList();
+        var baseRows = response.Rows.Where(r => !r.Upgraded).ToList();
+
+        // Keep only what the game still has. Carrying a since-removed card would
+        // put dead weight in the bundle and, worse, let it vote on where the
+        // band thresholds fall — the grades should be a statement about the
+        // cards a player can actually be offered.
+        var rows = baseRows.Where(r => inGame.Contains(r.Id)).ToList();
+        var retired = baseRows.Count - rows.Count;
 
         if (rows.Count == 0)
         {
@@ -173,7 +211,8 @@ internal static class Program
                 + "returns HTTP 200 with an empty list, so this is a bad cohort, not a real gap.");
         }
 
-        Console.WriteLine($"  {kind,-8} {bracket,-4} {character,-12} {rows.Count,4} rows");
+        var note = retired > 0 ? $"  ({retired} no longer in the game, dropped)" : "";
+        Console.WriteLine($"  {kind,-8} {bracket,-4} {character,-12} {rows.Count,4} rows{note}");
         return rows;
     }
 
@@ -259,7 +298,8 @@ internal static class Program
         return graded;
     }
 
-    private static void Write(string path, SnapshotStatus status, List<OutputRow> rows)
+    private static void Write(
+        string path, SnapshotStatus status, List<OutputRow> rows, List<string> coverage)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
@@ -270,6 +310,10 @@ internal static class Program
         sb.Append(CultureInfo.InvariantCulture, $"# snapshot\tv{status.Version}\n");
         sb.Append(CultureInfo.InvariantCulture, $"# data_through\t{status.DataThrough}\n");
         sb.Append(CultureInfo.InvariantCulture, $"# total_runs\t{status.TotalRuns}\n");
+        // rated/in-game, so the counts are explainable rather than mysterious:
+        // things with no run data (curses, statuses, tokens, event and ancient
+        // cards) are never offered in a ranked reward and so are never rated.
+        sb.Append(CultureInfo.InvariantCulture, $"# coverage\t{string.Join("  ", coverage)}\n");
         sb.Append("kind\tbracket\tcharacter\tid\tscore\twin_rate\tpick_rate\tpicks\ttier\n");
 
         // Deterministic order, so a refresh diff shows only what actually moved.
@@ -376,6 +420,9 @@ internal static class Program
         [property: JsonPropertyName("bracket")] string Bracket,
         [property: JsonPropertyName("character")] string? Character,
         [property: JsonPropertyName("rows")] List<MetricRow> Rows);
+
+    private sealed record CompendiumEntry(
+        [property: JsonPropertyName("id")] string Id);
 
     private sealed record MetricRow(
         [property: JsonPropertyName("id")] string Id,

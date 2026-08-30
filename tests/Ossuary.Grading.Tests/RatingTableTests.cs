@@ -20,14 +20,41 @@ public class RatingTableTests
         return RatingTable.Parse(reader);
     }
 
+    /// <summary>
+    /// Every relic and potion in the game is rated. Cards are not, and cannot
+    /// be: of the 577 in Codex's compendium, 74 are curses, statuses, tokens,
+    /// quest cards or event and ancient-pool cards, which are never offered in a
+    /// ranked card reward and so have no pick data to rate. Those show "no data"
+    /// at an offer rather than a grade.
+    /// </summary>
     [Fact]
-    public void BundlesEveryEntityTheGameHas()
+    public void RatesEverythingTheGameCanOffer()
     {
         var table = Load();
 
-        Assert.Equal(520, table.All(RatingKind.Card).Count);
-        Assert.Equal(298, table.All(RatingKind.Relic).Count);
-        Assert.Equal(64, table.All(RatingKind.Potion).Count);
+        Assert.Equal(503, table.All(RatingKind.Card).Count);
+        Assert.Equal(296, table.All(RatingKind.Relic).Count);
+        Assert.Equal(63, table.All(RatingKind.Potion).Count);
+    }
+
+    /// <summary>
+    /// Nothing retired from the game is carried. Codex's metrics span every run
+    /// ever submitted, so they still report ids from builds where those cards
+    /// existed; keeping them would put dead weight in the bundle and let them
+    /// vote on where the band thresholds fall.
+    /// </summary>
+    [Fact]
+    public void CarriesNothingTheGameHasRetired()
+    {
+        var table = Load();
+
+        foreach (var id in new[] { "BLAZE", "CACOPHONY", "HIBERNATE", "TUTOR", "UNDERWORLD" })
+        {
+            Assert.False(table.TryGet(RatingKind.Card, id, out _), $"{id} was removed from the game");
+        }
+
+        Assert.False(table.TryGet(RatingKind.Relic, "DOWSING_ROD", out _));
+        Assert.False(table.TryGet(RatingKind.Potion, "AMBERGRIS", out _));
     }
 
     [Fact]
