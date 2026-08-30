@@ -32,8 +32,8 @@ In development. Nothing is playable yet.
 | **M0** Toolchain, project skeleton, mod loads | ✅ done |
 | **M1** HUD shell — click-through canvas, settings, hotkey | ✅ done |
 | **M2** Bundled community data + normal-curve tiers | ✅ done |
-| **M3** Deck tracker | next |
-| **M4** Attack forecast | planned |
+| **M3** Deck tracker | ✅ done |
+| **M4** Attack forecast | next |
 | **M5** Tier ratings on offers | planned |
 | **M6** Workshop release | planned |
 
