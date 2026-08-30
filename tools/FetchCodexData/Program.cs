@@ -98,7 +98,6 @@ internal static class Program
             // nothing else.
             var committed = ReadCommittedVersion(outputPath);
             Console.WriteLine($"committed=v{committed?.ToString() ?? "none"} published=v{status.Version}");
-            Console.WriteLine($"::set-output-version::{status.Version}");
             return committed == status.Version ? 0 : 10;
         }
 
@@ -217,6 +216,11 @@ internal static class Program
             or HttpStatusCode.ServiceUnavailable
             or HttpStatusCode.GatewayTimeout,
         TaskCanceledException => true,
+        // A gateway in trouble will serve an HTML error page with HTTP 200,
+        // which arrives here as "the input does not contain any JSON tokens"
+        // rather than as a status code. Observed mid-outage: three 502s followed
+        // by a 200 carrying no JSON at all.
+        System.Text.Json.JsonException => true,
         _ => false,
     };
 

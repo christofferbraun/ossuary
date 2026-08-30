@@ -60,6 +60,16 @@
   </ItemGroup>
 
   <!--
+    The rating table travels inside the DLL. The loader copies <id>.dll and the
+    manifest and nothing else, so a data file beside them is one that may or may
+    not arrive - and a table that silently failed to install would leave every
+    offer reading "no data" with nothing to point at.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Data/ratings.tsv" LogicalName="Ossuary.Data.ratings.tsv" />
+  </ItemGroup>
+
+  <!--
     The grading logic is compiled INTO this assembly rather than referenced as a
     project. The mod loader loads exactly one file - <id>.dll - so a second
     assembly beside it would resolve only if the loader's probing happened to

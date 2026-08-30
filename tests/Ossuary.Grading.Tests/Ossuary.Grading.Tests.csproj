@@ -20,4 +20,15 @@
     <None Update="codex-cards-v26.csv" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!--
+    The tests run against the table the mod actually ships, linked from its home
+    rather than copied. A fixture that drifted from the bundle would assert the
+    curve holds for data nobody installs.
+  -->
+  <ItemGroup>
+    <None Include="../../src/Ossuary/Data/ratings.tsv"
+          Link="ratings.tsv"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

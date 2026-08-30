@@ -31,8 +31,8 @@ In development. Nothing is playable yet.
 | --- | --- |
 | **M0** Toolchain, project skeleton, mod loads | ✅ done |
 | **M1** HUD shell — click-through canvas, settings, hotkey | ✅ done |
-| **M2** Bundled community data + normal-curve tiers | next |
-| **M3** Deck tracker | planned |
+| **M2** Bundled community data + normal-curve tiers | ✅ done |
+| **M3** Deck tracker | next |
 | **M4** Attack forecast | planned |
 | **M5** Tier ratings on offers | planned |
 | **M6** Workshop release | planned |
@@ -89,9 +89,12 @@ elsewhere, use any of:
 
 ```
 src/Ossuary/           the shipped mod assembly
-src/Ossuary.Grading/   tier banding and confidence — references nothing from the game
+src/Ossuary/Data/      the bundled rating table, embedded into the DLL
+src/Ossuary.Grading/   tier banding, confidence, and the table reader —
+                       references nothing from the game
 tests/                 unit tests for the above, runnable without the game
 tools/                 build, install, and log scripts
+tools/FetchCodexData/  build-time only: refetches and regrades the table
 docs/COMPAT.md         every hook and patch, and the build it was verified against
 ```
 
@@ -112,6 +115,13 @@ S  6.7%    A 16.0%    B 27.3%    C 27.3%    D 16.0%    F  6.7%
 
 Ratings are bundled with each release and refreshed per build. **Ossuary makes
 no network requests while you play.**
+
+Grades are global — one rating per card, relic and potion across every character
+and ascension. Codex publishes per-character slices too, but their scores
+saturate: 61% of cards sit at exactly 100 for Necrobinder, which collapses A and
+B to nothing and grades most of the game S. That is the same defect as a
+bottom-loaded tier list, merely inverted, so v1 bundles only the cohort whose
+numbers can actually carry a grade.
 
 ## Acknowledgements
 
