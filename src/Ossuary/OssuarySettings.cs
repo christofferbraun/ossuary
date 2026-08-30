@@ -40,6 +40,11 @@ internal sealed class OssuarySettings
     public Dictionary<string, PanelPlacement> Panels { get; set; } = new();
 
     /// <summary>
+    /// How many cards ahead the draw odds look. Five is a standard hand.
+    /// </summary>
+    public int DrawLookahead { get; set; } = 5;
+
+    /// <summary>
     /// Adds a panel whose only purpose is to throw, proving that one failing
     /// panel disables itself and leaves the rest of the HUD running. Off by
     /// default; this is a development aid, not a feature.

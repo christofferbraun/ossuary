@@ -43,6 +43,7 @@ public static class ModEntry
             CheckGameVersion();
             Settings = OssuarySettings.Load();
             Ratings.Load();
+            State.CombatWatcher.Register();
 
             _harmony = new Harmony(HarmonyId);
             _harmony.PatchAll(typeof(ModEntry).Assembly);
