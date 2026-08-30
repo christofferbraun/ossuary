@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Builds Ossuary and stages an install-ready mod directory.
 

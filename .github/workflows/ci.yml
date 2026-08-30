@@ -32,5 +32,12 @@ jobs:
       - name: Build
         run: dotnet build tests/Ossuary.Grading.Tests/Ossuary.Grading.Tests.csproj -c Release --no-restore
 
+      # Windows PowerShell 5.1 reads .ps1 as ANSI without a UTF-8 BOM, so a
+      # non-ASCII character in a string is a parse error, not a display glitch.
+      # tools/logs.ps1 was broken this way for several milestones because the
+      # scripts are never exercised in CI.
+      - name: PowerShell scripts must parse on Windows
+        run: python3 tools/check-encoding.py
+
       - name: Test
         run: dotnet test tests/Ossuary.Grading.Tests/Ossuary.Grading.Tests.csproj -c Release --no-build --verbosity normal

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Builds Ossuary and installs it into the game's mods directory.
 

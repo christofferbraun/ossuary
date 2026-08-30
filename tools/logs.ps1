@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Shows what Ossuary and the mod loader reported in the most recent session.
 
