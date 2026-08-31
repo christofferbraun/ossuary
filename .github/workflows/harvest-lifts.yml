@@ -61,7 +61,7 @@ jobs:
       # checkpoint can cost a repeated request but never a missing row.
       - name: Restore the checkpoint
         if: inputs.mode == 'harvest' && !inputs.fresh
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: build/harvest
           key: harvest-lifts-${{ github.run_id }}
@@ -87,7 +87,7 @@ jobs:
       # attempt resumes from here rather than starting over.
       - name: Save the checkpoint
         if: always() && inputs.mode == 'harvest'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: build/harvest
           key: harvest-lifts-${{ github.run_id }}
