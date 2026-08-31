@@ -41,9 +41,24 @@ internal abstract class HudPanel
     /// </remarks>
     internal bool Hidden { get; private set; }
 
+    /// <summary>
+    /// Whether the player may switch this panel off.
+    /// </summary>
+    /// <remarks>
+    /// False for the one panel that carries the hotkeys. Every other panel can
+    /// be turned off, and if the last one holding "press F9" could be turned
+    /// off too, a player who hid everything would have nothing on screen
+    /// telling them how to get it back.
+    /// </remarks>
+    internal virtual bool CanHide => true;
+
     /// <summary>Applies a saved on/off state, without writing settings back.</summary>
     internal void SetHidden(bool hidden)
     {
+        // A panel that may not be hidden stays on even if a settings file says
+        // otherwise - hand-edited, or written before it became permanent.
+        if (!CanHide) hidden = false;
+
         Hidden = hidden;
         UpdateToggle();
         if (Root is not null && !Failed && !_arranging) Root.Visible = !hidden;
@@ -52,6 +67,8 @@ internal abstract class HudPanel
     /// <summary>Flips this panel on or off. Returns the new state.</summary>
     internal bool ToggleHidden()
     {
+        if (!CanHide) return false;
+
         SetHidden(!Hidden);
         return Hidden;
     }
@@ -61,7 +78,7 @@ internal abstract class HudPanel
     /// coordinates, or null when there is nothing to click.
     /// </summary>
     internal Rect2? ToggleRect =>
-        _arranging && _toggle is not null && !Failed ? _toggle.GetGlobalRect() : null;
+        _arranging && CanHide && _toggle is not null && !Failed ? _toggle.GetGlobalRect() : null;
 
     /// <summary>
     /// Tells the panel the HUD is being arranged.
@@ -157,6 +174,16 @@ internal abstract class HudPanel
     private void UpdateToggle()
     {
         if (_toggle is null) return;
+
+        // A permanent panel still shows a chip, dimmed and unclickable. Showing
+        // nothing there would read as a missing control rather than an absent
+        // one, and the first thing anyone would do is click where it should be.
+        if (!CanHide)
+        {
+            _toggle.Text = "ALWAYS";
+            _toggle.AddThemeColorOverride("font_color", new Color(0.45f, 0.49f, 0.47f));
+            return;
+        }
 
         _toggle.Text = Hidden ? "OFF" : "ON";
         _toggle.AddThemeColorOverride(

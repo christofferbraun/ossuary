@@ -84,7 +84,7 @@ public partial class HudController : CanvasLayer
             _root.SetAnchorsPreset(Control.LayoutPreset.FullRect);
             AddChild(_root);
 
-            Add(new StatusPanel());
+            Add(new StatusPanel(_settings));
             Add(new DeckPanel(_settings));
             Add(new ForecastPanel(_settings));
 

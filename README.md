@@ -63,7 +63,7 @@ steps towards one. Each is independent and can ship in any order.
 | --- | --- | --- |
 | **v2M0** Deck-conditioned advice | grades that account for the deck you actually have, from Codex's pairwise draft model | model and tests done; the harvest has never been run |
 | **v2M1** Party debuff coverage | whether anyone in a co-op party is holding Vulnerable or Weak **this turn** | built, in testing |
-| **v2M2** Per-panel show/hide | an `ON`/`OFF` control on each panel in layout mode, saved between sessions | built, in testing |
+| **v2M2** Per-panel show/hide | an `ON`/`OFF` control on each panel in layout mode, saved between sessions; the panel carrying the hotkeys stays on | built, in testing |
 
 **[docs/ROADMAP.md](docs/ROADMAP.md)** carries the reasoning behind each — what
 it is for, why it works the way it does, and what is deliberately not planned.
