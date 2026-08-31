@@ -27,6 +27,33 @@ that later entries will.
 
 ---
 
+## 0.7.0 — 2026-08-31 — per-panel show/hide
+
+Every panel gets an `ON`/`OFF` control in its top-right corner while layout mode
+is open. Clicking it hides that panel; the state is saved beside the panel's
+position and restored next session. A hidden panel does no work at all rather
+than working and drawing nothing.
+
+**The status panel cannot be switched off**, and now carries the hotkeys and the
+version:
+
+```
+OSSUARY  v0.7.0
+codex v26 · 503 cards · 296 relics · 63 potions
+F9 hide  ·  F10 arrange
+```
+
+If the last thing on screen saying which key brings the HUD back could itself be
+turned off, a player who hid everything would have no way to discover the way
+out. In layout mode it shows a dimmed `ALWAYS` chip rather than nothing at all,
+because an absent control reads as a broken one.
+
+The keys are read from settings, so someone who rebinds them is told what they
+actually rebound to.
+
+An older settings file has no `hidden` key, which reads as false, so upgrading
+cannot silently switch a panel off.
+
 ## 0.6.1 — 2026-08-31
 
 Tooling and documentation. No change to anything the mod does in game.

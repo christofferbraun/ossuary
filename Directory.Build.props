@@ -33,7 +33,7 @@
       manifest, the status panel in game and the tag the release gate checks
       all read it from here. See CHANGELOG.md for what each version means.
     -->
-    <Version>0.6.1</Version>
+    <Version>0.7.0</Version>
     <Authors>christofferbraun</Authors>
     <Product>Ossuary</Product>
   </PropertyGroup>

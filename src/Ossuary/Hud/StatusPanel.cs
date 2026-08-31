@@ -16,10 +16,20 @@ namespace Ossuary.Hud;
 /// bundled and how much of the game it covers. That is what separates "no rating
 /// for this card" meaning a known gap in the data from meaning the table failed
 /// to load.
+///
+/// It also carries the hotkeys, and is the one panel that cannot be switched
+/// off. Every other panel can be, and a player who turned them all off would
+/// otherwise be left with a HUD that shows nothing and no indication that a key
+/// brings it back — the controls have to outlive the things they control.
 /// </remarks>
 internal sealed class StatusPanel : HudPanel
 {
-    internal StatusPanel() : base("status") { }
+    private readonly OssuarySettings _settings;
+
+    internal StatusPanel(OssuarySettings settings) : base("status") => _settings = settings;
+
+    /// <inheritdoc />
+    internal override bool CanHide => false;
 
     protected override Control BuildRoot()
     {
@@ -48,7 +58,15 @@ internal sealed class StatusPanel : HudPanel
         var box = new VBoxContainer();
         panel.AddChild(box);
 
-        box.AddChild(MakeLabel("OSSUARY", new Color(0.42f, 0.78f, 0.70f)));
+        // Name and version on one line, in two labels so the version can
+        // be dimmer than the name. It is read from the assembly, which
+        // reads it from Directory.Build.props, so there is no second place
+        // for it to be declared and go stale.
+        var title = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        title.AddThemeConstantOverride("separation", 8);
+        title.AddChild(MakeLabel("OSSUARY", new Color(0.42f, 0.78f, 0.70f)));
+        title.AddChild(MakeLabel($"v{ModEntry.Version}", new Color(0.42f, 0.50f, 0.48f), 13));
+        box.AddChild(title);
 
         var table = Ratings.Table;
         box.AddChild(MakeLabel(
@@ -59,6 +77,13 @@ internal sealed class StatusPanel : HudPanel
                   + $"{table.All(Grading.RatingKind.Potion).Count} potions",
             table is null ? new Color(0.83f, 0.45f, 0.37f) : new Color(0.62f, 0.67f, 0.64f),
             14));
+
+        // The keys, from settings rather than hardcoded, so a player who
+        // rebinds them is told what they actually rebound to.
+        box.AddChild(MakeLabel(
+            $"{_settings.ToggleKey} hide  ·  {_settings.LayoutKey} arrange",
+            new Color(0.45f, 0.62f, 0.58f),
+            13));
 
         return panel;
     }

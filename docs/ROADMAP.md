@@ -105,6 +105,12 @@ It is a `Label`, not a `Button`: the HUD stays `MouseFilter.Ignore` throughout
 and clicks are hit-tested in `HudController._Input`, so no part of the HUD can
 swallow input meant for the game.
 
+**One panel cannot be switched off.** The status panel carries the hotkeys, and
+if the last thing on screen saying "press F9" could itself be turned off, a
+player who hid everything would be left with a blank HUD and no indication that
+a key brings it back. It still shows a chip in layout mode, dimmed and reading
+`ALWAYS` rather than nothing at all - an absent control reads as a broken one.
+
 An older settings file has no `hidden` key, which deserialises to false, so
 upgrading cannot silently switch a panel off.
 

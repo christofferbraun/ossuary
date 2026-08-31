@@ -143,9 +143,18 @@ internal sealed class OssuarySettings
     }
 }
 
-/// <summary>A panel's top-left corner, in the game's design space.</summary>
+/// <summary>Where a panel sits, and whether it is switched on.</summary>
+/// <remarks>
+/// Absent entries keep the panel's built-in default, so adding a panel later
+/// does not require touching a settings file that predates it - and an older
+/// file simply has no <c>hidden</c> key, which deserialises to false, meaning
+/// every panel stays on. Upgrading cannot silently switch something off.
+/// </remarks>
 internal sealed class PanelPlacement
 {
     public float X { get; set; }
     public float Y { get; set; }
+
+    /// <summary>Switched off by the player in layout mode.</summary>
+    public bool Hidden { get; set; }
 }
