@@ -31,33 +31,55 @@ than guessing at it, and it works with the window wherever you put it.
 
 ## Status
 
-In development, and playable. The deck tracker and the attack forecast work in
-game; ratings on offers and the Workshop release are still to come.
+In development, and playable. Everything in v1 is in `main` and working in game;
+the Workshop release is the remaining piece.
 
-| Milestone | State |
-| --- | --- |
-| **M0** Toolchain, project skeleton, mod loads | ✅ done |
-| **M1** HUD shell — click-through canvas, settings, hotkey | ✅ done |
-| **M2** Bundled community data + normal-curve tiers | ✅ done |
-| **M3** Deck tracker | ✅ done |
-| **M4** Attack forecast | ✅ done |
-| **M5** Tier ratings on offers | 🔨 built, in testing |
-| **M6** Workshop release | planned |
+### v1 — what it does today
 
-Deck-*conditioned* advice — grades that account for the deck you actually have —
-is planned for v2.
+| Milestone | State | |
+| --- | --- | --- |
+| **M0** Toolchain, project skeleton, mod loads | ✅ shipped | |
+| **M1** HUD shell — click-through canvas, settings, hotkeys | ✅ shipped | `F9` / `F10` |
+| **M2** Bundled community data, re-banded onto a normal curve | ✅ shipped | 503 cards, 296 relics, 63 potions |
+| **M3** Deck tracker with per-card draw odds | ✅ shipped | reads the real draw, not an assumed five |
+| **M4** Incoming-attack forecast | ✅ shipped | the game's own damage calculation |
+| **M5** Tier ratings on offers | ✅ shipped | rewards, shop, chests, ancients' blessings |
+| **M6** Steam Workshop release | 🔨 in progress | packaging and release gate done; not yet published |
+
+### v2 — in flight
+
+Numbered separately because these are additions to a working mod rather than
+steps towards one. Each is independent and can ship in any order.
+
+| | | State |
+| --- | --- | --- |
+| **v2M0** Deck-conditioned advice | grades that account for the deck you actually have, from Codex's pairwise draft model | model and tests done; the harvest has never been run |
+| **v2M1** Party debuff coverage | whether anyone in a co-op party is holding Vulnerable or Weak **this turn** | built, in testing |
+| **v2M2** Per-panel show/hide | an `ON`/`OFF` control on each panel in layout mode, saved between sessions | built, in testing |
+
+`docs/ROADMAP.md` carries the reasoning behind each — what it is for, and why it
+works the way it does.
+
+### Not planned
+
+Anything that changes a rule, pool, price or outcome, and any network request
+during play. Both are load-bearing for the case that this is a reading tool
+rather than an assist, not merely preferences.
 
 ## Using it
 
 | Key | |
 | --- | --- |
-| `F9` | hide and show the HUD |
-| `F10` | layout mode — drag panels, `-` and `+` resize the text |
+| `F9` | hide and show the whole HUD |
+| `F10` | layout mode — drag panels, click a panel's `ON`/`OFF` to show or hide it, `-` and `+` resize the text |
 
-Panel positions and text size are saved to
-`%APPDATA%\SlayTheSpire2\ossuary.json` and survive restarts. The deck tracker
-and the forecast take themselves off screen outside combat, and stay visible
-while you are arranging the HUD so they can be positioned.
+Panel positions, on/off state and text size are saved to
+`%APPDATA%\SlayTheSpire2\ossuary.json` and survive restarts.
+
+Panels take themselves off screen when they have nothing to say — the deck
+tracker and the forecast outside combat, the party panel outside co-op — and
+all of them stay visible while you are arranging the HUD, so they can be
+positioned and switched back on.
 
 ## What it does not do
 
@@ -86,6 +108,14 @@ game's own reporting. If that matters to you, don't install it.
 .\tools\logs.ps1
 ```
 
+If the game crashes, this says whether Ossuary was anywhere near it. It reads
+the minidumps the game's own crash handler leaves behind and reports the
+faulting module and every module on the faulting thread's stack:
+
+```powershell
+python tools\crash-report.py
+```
+
 The game install is located automatically at the default Steam path. To point
 elsewhere, use any of:
 
@@ -112,8 +142,9 @@ src/Ossuary/Data/      the bundled rating table, embedded into the DLL
 src/Ossuary.Grading/   tier banding, confidence, and the table reader —
                        references nothing from the game
 tests/                 unit tests for the above, runnable without the game
-tools/                 build, install, and log scripts
+tools/                 build, install, log and crash-inspection scripts
 tools/FetchCodexData/  build-time only: refetches and regrades the table
+docs/ROADMAP.md        what is shipped, what is in flight, and why
 docs/COMPAT.md         every hook and patch, and the build it was verified against
 ```
 
