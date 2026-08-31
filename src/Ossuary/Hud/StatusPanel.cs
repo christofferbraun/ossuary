@@ -58,7 +58,15 @@ internal sealed class StatusPanel : HudPanel
         var box = new VBoxContainer();
         panel.AddChild(box);
 
-        box.AddChild(MakeLabel("OSSUARY", new Color(0.42f, 0.78f, 0.70f)));
+        // Name and version on one line, in two labels so the version can
+        // be dimmer than the name. It is read from the assembly, which
+        // reads it from Directory.Build.props, so there is no second place
+        // for it to be declared and go stale.
+        var title = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        title.AddThemeConstantOverride("separation", 8);
+        title.AddChild(MakeLabel("OSSUARY", new Color(0.42f, 0.78f, 0.70f)));
+        title.AddChild(MakeLabel($"v{ModEntry.Version}", new Color(0.42f, 0.50f, 0.48f), 13));
+        box.AddChild(title);
 
         var table = Ratings.Table;
         box.AddChild(MakeLabel(
