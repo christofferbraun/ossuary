@@ -3,12 +3,15 @@ using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Nodes.Cards;
 using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
+using MegaCrit.Sts2.Core.Nodes.Events;
 using MegaCrit.Sts2.Core.Nodes.Potions;
 using MegaCrit.Sts2.Core.Nodes.Relics;
 using MegaCrit.Sts2.Core.Nodes.Rewards;
 using MegaCrit.Sts2.Core.Nodes.Screens;
 using MegaCrit.Sts2.Core.Nodes.Screens.CardLibrary;
 using MegaCrit.Sts2.Core.Nodes.Screens.CardSelection;
+using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
+using MegaCrit.Sts2.Core.Nodes.Screens.Shops;
 using MegaCrit.Sts2.Core.Rewards;
 using Ossuary.Grading;
 
@@ -21,40 +24,23 @@ namespace Ossuary.Hud;
 /// <para>
 /// <b>Badges are drawn, not attached.</b> Every label lives on Ossuary's own
 /// overlay and is positioned each frame from the measured screen rectangle of
-/// the thing it annotates. Earlier versions parented a label to the game's own
-/// node and anchored it, which failed three separate ways: <c>NCard</c>'s
+/// the thing it annotates. An earlier version parented a label to the game's
+/// own node and anchored it, which failed several ways at once: <c>NCard</c>'s
 /// control rect is not the visible card, the hover scale lives on the holder
-/// rather than the card, and <c>NCard</c> is <c>IPoolable</c>, so a badge
-/// added to a recycled node rode it onto unrelated screens carrying the last
-/// card's colour. Drawing into our own layer makes all three impossible: we
-/// never modify the scene, so there is nothing to leave behind.
+/// rather than the card, and <c>NCard</c> is <c>IPoolable</c>, so a badge added
+/// to a recycled node rode it onto unrelated screens. Drawing into our own
+/// layer makes all of that impossible: we never modify the scene, so there is
+/// nothing to leave behind.
 /// </para>
 /// <para>
-/// <b>Where the rectangle comes from.</b> Not from a constant. Every screen
-/// that offers a card wraps it in an <see cref="NGridCardHolder"/>, and the
-/// holder's <c>%Hitbox</c> is the game's own statement of where the card is —
-/// it is the region the player clicks. Reading its transform picks up the
-/// holder's hover scale, the shop's smaller cards and any animation in flight
-/// for free, which is also why the badge's own text size is derived from the
-/// measured height rather than fixed.
+/// <b>Where the rectangle comes from.</b> Not from a constant. The game wraps
+/// anything you can pick in a slot that owns a <c>%Hitbox</c> — an
+/// <see cref="NCardHolder"/> on the reward and choice screens, an
+/// <see cref="NMerchantSlot"/> in the shop — and that hitbox is the region the
+/// player clicks, which makes it the game's own statement of where the thing
+/// is. Reading its transform picks up the holder's hover scale and the shop's
+/// smaller cards for free.
 /// </para>
-/// <para>
-/// <b>Which nodes get a badge.</b> Two tests, because either alone has been
-/// wrong in play:
-/// </para>
-/// <list type="bullet">
-/// <item>the model must look like an offer — a <see cref="CardModel"/> in no
-/// pile and not a view of a card already in your deck, a relic outside
-/// <c>NRelicInventory</c>, a potion outside <c>NPotionContainer</c> — and be a
-/// type you can actually choose. A Status or a Curse enters your deck
-/// <em>against your will</em>, so rating it answers a question nobody asked.</item>
-/// <item>and it must not be on a screen that shows you your own collection.
-/// The six "pick one of the cards you already own" screens — upgrade, remove,
-/// transform, enchant, pile and simple select — all derive from
-/// <see cref="NCardGridSelectionScreen"/>, and none of the screens that offer
-/// you something new does. Cards there report no pile, so the model test alone
-/// let the upgrade screen grade your own deck.</item>
-/// </list>
 /// </remarks>
 internal sealed class OfferBadges
 {
@@ -69,12 +55,22 @@ internal sealed class OfferBadges
     /// </remarks>
     private const int ImplausibleCandidates = 20;
 
+    /// <summary>Consecutive failed ticks before giving up for the session.</summary>
+    private const int MaxStrikes = 10;
+
+    /// <summary>Clear space between a badge and the icon it annotates.</summary>
+    private const float Gap = 8f;
+
     /// <summary>Scanning four times a second is imperceptible and cheap.</summary>
     private static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(250);
 
     /// <summary>
     /// The only card types you are ever asked to choose.
     /// </summary>
+    /// <remarks>
+    /// Everything else — Status, Curse, Quest — arrives without being picked,
+    /// so a rating on it answers a question nobody asked.
+    /// </remarks>
     private static readonly CardType[] Offerable = [CardType.Attack, CardType.Skill, CardType.Power];
 
     private readonly OssuarySettings _settings;
@@ -82,12 +78,10 @@ internal sealed class OfferBadges
     private readonly List<Target> _targets = new();
     private readonly List<Node> _found = new();
 
-    /// <summary>Consecutive failed ticks before giving up for the session.</summary>
-    private const int MaxStrikes = 10;
-
     private DateTime _lastScan = DateTime.MinValue;
     private int _strikes;
     private bool _announced;
+    private bool _measured;
     private bool _failed;
 
     internal OfferBadges(OssuarySettings settings, Control host)
@@ -106,7 +100,7 @@ internal sealed class OfferBadges
     /// <summary>
     /// Called every frame. Rescans the tree occasionally; repositions what it
     /// already knows about every time, so badges track hover and tween
-    /// animations exactly rather than lagging a scan behind.
+    /// animations smoothly rather than stepping a scan at a time.
     /// </summary>
     internal void Tick(Node root, bool hudVisible)
     {
@@ -133,11 +127,9 @@ internal sealed class OfferBadges
         catch (Exception ex)
         {
             // A single bad frame is not a reason to give up for the session.
-            // The previous design disabled itself on the first exception, which
-            // meant one transient failure early in a run silently took offer
-            // ratings out for good - and, because badges were parented to game
-            // nodes back then, left the ones already attached frozen on screen
-            // rather than removing them.
+            // An earlier design disabled itself on the first exception, which
+            // meant one transient failure silently took offer ratings out for
+            // good.
             Log.Error($"offer ratings failed ({++_strikes}/{MaxStrikes})", ex);
 
             if (_strikes < MaxStrikes) return;
@@ -150,8 +142,13 @@ internal sealed class OfferBadges
 
     private void Rescan(Node root)
     {
+        // The screen the player is actually looking at. Opening the card reward
+        // over a loot screen leaves the loot screen in the tree and visible, so
+        // its potion went on being annotated underneath the cards.
+        var top = NOverlayStack.Instance?.Peek() as Node;
+
         _found.Clear();
-        Collect(root, _found);
+        Collect(root, top, _found);
         DropRedundantRows(_found);
 
         if (_found.Count > ImplausibleCandidates) _found.Clear();
@@ -185,9 +182,17 @@ internal sealed class OfferBadges
     /// <summary>
     /// Moves every badge onto its subject's current screen rectangle.
     /// </summary>
+    /// <remarks>
+    /// The point size is fixed and the whole label is scaled, rather than the
+    /// point size being recomputed from the measured height. Font sizes are
+    /// integers, so recomputing one made the label's width jump a whole step at
+    /// a time and re-run its layout, which read as jitter while a card grew
+    /// under the cursor. Scaling is continuous.
+    /// </remarks>
     private void Reposition()
     {
         var viewport = _layer.GetViewportRect();
+        var scaleSetting = _settings.ClampedTextScale;
 
         foreach (var target in _targets)
         {
@@ -203,36 +208,55 @@ internal sealed class OfferBadges
                 continue;
             }
 
-            // On a card the text scales with the card. A shop card, a reward
-            // card and a hovered card are three different sizes on screen, and
-            // a fixed point size reads correctly on at most one of them.
-            // A relic or potion icon is far smaller than a card and carries the
-            // same sentence, so it keeps a fixed size instead.
-            var font = target.Node is NCard
-                ? Math.Clamp((int)Math.Round(rect.Size.Y * 0.047f * _settings.ClampedTextScale), 9, 48)
-                : Math.Max(9, (int)Math.Round(15 * _settings.ClampedTextScale));
+            // A card is drawn at a point size chosen for a full-size card and
+            // then scaled to whatever the card currently is. Everything else is
+            // an icon far smaller than a card carrying the same sentence, so it
+            // keeps a fixed size.
+            var onCard = target.Anchor == Anchor.CardBottom;
+            var font = Math.Max(9, (int)Math.Round((onCard ? 20 : 15) * scaleSetting));
+            var scale = onCard ? rect.Size.Y / NCard.defaultSize.Y : 1f;
 
-            if (label.Text != target.Text) label.Text = target.Text;
-            label.AddThemeFontSizeOverride("font_size", font);
-            label.AddThemeColorOverride("font_color", target.Tint);
+            target.Refresh(font);
+
+            // Cheap when nothing is dirty - the minimum size is cached - and
+            // calling it unconditionally avoids keeping a size that was
+            // measured on the frame the label was created, before its font
+            // override had resolved.
             label.ResetSize();
+            label.Scale = new Vector2(scale, scale);
 
-            var size = label.Size;
-
-            // A reward row is wide and already carries its own text, so the
-            // badge goes at its right-hand end rather than across the middle.
-            var pos = target.Node is NRewardButton
-                ? new Vector2(
-                    rect.End.X - size.X - 12f,
-                    rect.Position.Y + (rect.Size.Y - size.Y) * 0.5f)
-                : new Vector2(
+            var size = label.Size * scale;
+            var pos = target.Anchor switch
+            {
+                // Just inside the card's bottom border, centred.
+                Anchor.CardBottom => new Vector2(
                     rect.Position.X + (rect.Size.X - size.X) * 0.5f,
-                    rect.End.Y - size.Y - rect.Size.Y * 0.035f);
+                    rect.End.Y - size.Y - rect.Size.Y * 0.035f),
+
+                // A reward row is wide and already carries its own text, so the
+                // badge goes at its right-hand end.
+                Anchor.RowRight => new Vector2(
+                    rect.End.X - size.X - 12f,
+                    rect.Position.Y + (rect.Size.Y - size.Y) * 0.5f),
+
+                // An icon inside a reward row has clear space to its left, and
+                // sitting there covers none of the icon.
+                Anchor.IconLeft => new Vector2(
+                    rect.Position.X - size.X - Gap,
+                    rect.Position.Y + (rect.Size.Y - size.Y) * 0.5f),
+
+                // Icons laid out in a grid - the shop - have neighbours to
+                // either side but clear space above, so the badge goes there
+                // rather than over the artwork.
+                _ => new Vector2(
+                    rect.Position.X + (rect.Size.X - size.X) * 0.5f,
+                    rect.Position.Y - size.Y - Gap),
+            };
 
             // A badge drawn off the edge of the screen is a badge nobody asked
             // for; the subject is mid-animation or parked offstage.
             label.Visible = viewport.Intersects(new Rect2(pos, size));
-            label.Position = pos.Round();
+            label.Position = pos;
         }
     }
 
@@ -254,10 +278,13 @@ internal sealed class OfferBadges
 
         if (node is NCard card)
         {
-            // Preferred: the holder's hitbox, which is what the player clicks.
-            // Then the card's own body. The class constant is the last resort,
-            // and is the only one of the three that can go stale in a patch.
-            if (Ancestor<NCardHolder>(card)?.Hitbox is { } hitbox && IsSized(hitbox.Size))
+            // Preferred: the enclosing slot's hitbox, which is what the player
+            // clicks. Reward and choice screens hold cards in an NCardHolder;
+            // the shop holds them in an NMerchantSlot, which is why shop cards
+            // measured wrong while reward cards measured right. Then the card's
+            // own body. The class constant is the last resort, and is the only
+            // one of the three that can go stale in a patch.
+            if (Hitbox(card) is { } hitbox && IsSized(hitbox.Size))
             {
                 item = hitbox;
                 size = hitbox.Size;
@@ -283,8 +310,7 @@ internal sealed class OfferBadges
             return false;
         }
 
-        var toScreen = item.GetGlobalTransformWithCanvas();
-        var toLayer = _layer.GetGlobalTransformWithCanvas().AffineInverse() * toScreen;
+        var toLayer = _layer.GetGlobalTransformWithCanvas().AffineInverse() * item.GetGlobalTransformWithCanvas();
 
         var a = toLayer * Vector2.Zero;
         var b = toLayer * new Vector2(size.X, 0);
@@ -312,7 +338,22 @@ internal sealed class OfferBadges
         return true;
     }
 
-    private bool _measured;
+    /// <summary>
+    /// The hitbox of whichever slot holds this node, if it is in one.
+    /// </summary>
+    private static Control? Hitbox(Node node)
+    {
+        for (var parent = node.GetParent(); parent is not null; parent = parent.GetParent())
+        {
+            switch (parent)
+            {
+                case NCardHolder holder: return holder.Hitbox;
+                case NMerchantSlot slot: return slot.Hitbox;
+            }
+        }
+
+        return null;
+    }
 
     private static bool IsSized(Vector2 size) => size.X > 1f && size.Y > 1f;
 
@@ -350,7 +391,7 @@ internal sealed class OfferBadges
         _targets.Clear();
     }
 
-    private static void Collect(Node node, List<Node> offers)
+    private static void Collect(Node node, Node? top, List<Node> offers)
     {
         // Our own HUD holds no offers and walking it wastes the budget.
         if (node.Name == "OssuaryHud") return;
@@ -361,7 +402,7 @@ internal sealed class OfferBadges
         // everything else on screen.
         try
         {
-            if (IsOffered(node)) offers.Add(node);
+            if (IsOffered(node) && !IsCovered(node, top)) offers.Add(node);
         }
         catch (Exception)
         {
@@ -370,7 +411,32 @@ internal sealed class OfferBadges
             // an odd state would fill the log rather than tell us anything.
         }
 
-        foreach (var child in node.GetChildren()) Collect(child, offers);
+        foreach (var child in node.GetChildren()) Collect(child, top, offers);
+    }
+
+    /// <summary>
+    /// True when this node belongs to a screen that another screen has been
+    /// opened on top of.
+    /// </summary>
+    /// <remarks>
+    /// Overlay screens stack: taking the card reward from a loot screen pushes
+    /// the card selection on top while leaving the loot screen in the tree and
+    /// still reporting itself visible. Anything under an overlay that is not
+    /// the topmost one is behind something and must not be annotated. A node
+    /// under no overlay at all — the shop, an event laid out in the room — is
+    /// left alone, so this cannot suppress a screen that never joins the stack.
+    /// </remarks>
+    private static bool IsCovered(Node node, Node? top)
+    {
+        if (top is null) return false;
+
+        for (var parent = node.GetParent(); parent is not null; parent = parent.GetParent())
+        {
+            if (parent is not IOverlayScreen) continue;
+            return !ReferenceEquals(parent, top);
+        }
+
+        return false;
     }
 
     private static bool IsOffered(Node node) => node switch
@@ -391,8 +457,14 @@ internal sealed class OfferBadges
         // A reward row, for the cases where the reward draws no node of its own.
         // PotionReward overrides CreateIcon and produces an NPotion, which the
         // case above already catches; RelicReward does not, so a relic offered
-        // as a reward — Neow's opening choice among them — had nothing to badge.
+        // as a reward had nothing to badge.
         NRewardButton button => button.Reward is RelicReward or PotionReward,
+
+        // Neow's blessings. Every one of them is a relic - the model builds
+        // them with RelicOption<T> - but they are drawn as event rows rather
+        // than as relic nodes, so nothing above sees them.
+        NEventOptionButton option => option.Option?.Relic is not null,
+
         _ => false,
     };
 
@@ -472,7 +544,7 @@ internal sealed class OfferBadges
         return false;
     }
 
-    private static T? Ancestor<T>(Node node) where T : Node
+    private static T? Ancestor<T>(Node node) where T : class
     {
         for (var parent = node.GetParent(); parent is not null; parent = parent.GetParent())
         {
@@ -482,7 +554,7 @@ internal sealed class OfferBadges
         return null;
     }
 
-    private static bool HasAncestor<T>(Node node) where T : Node => Ancestor<T>(node) is not null;
+    private static bool HasAncestor<T>(Node node) where T : class => Ancestor<T>(node) is not null;
 
     /// <summary>
     /// What this node is and which rating to look up, or a null id if it cannot
@@ -504,6 +576,7 @@ internal sealed class OfferBadges
                 NPotion potion => (RatingKind.Potion, potion.Model?.Id.ToString()),
                 NRewardButton { Reward: RelicReward relic } => (RatingKind.Relic, relic.Relic?.Id.ToString()),
                 NRewardButton { Reward: PotionReward potion } => (RatingKind.Potion, potion.Potion?.Id.ToString()),
+                NEventOptionButton option => (RatingKind.Relic, option.Option?.Relic?.Id.ToString()),
                 _ => (RatingKind.Card, null),
             };
         }
@@ -512,6 +585,26 @@ internal sealed class OfferBadges
             return (RatingKind.Card, null);
         }
     }
+
+    /// <summary>Where a badge sits relative to the thing it annotates.</summary>
+    private enum Anchor
+    {
+        CardBottom,
+        RowRight,
+        IconLeft,
+        IconAbove,
+    }
+
+    private static Anchor AnchorFor(Node node) => node switch
+    {
+        NCard => Anchor.CardBottom,
+        NRewardButton or NEventOptionButton => Anchor.RowRight,
+
+        // A relic or potion drawn inside a reward row has clear space beside
+        // it; one in the shop's grid has neighbours either side but nothing
+        // above.
+        _ => HasAncestor<NRewardButton>(node) ? Anchor.IconLeft : Anchor.IconAbove,
+    };
 
     /// <summary>
     /// The badge text: grade, then the raw score, then the numbers behind it.
@@ -555,19 +648,42 @@ internal sealed class OfferBadges
     }
 
     /// <summary>One badge and the node it belongs to.</summary>
-    private readonly struct Target
+    private sealed class Target
     {
+        private readonly string _text;
+        private readonly Color _tint;
+        private int _font;
+
         internal Target(Node node, Label label, RatingKind kind, string id)
         {
             Node = node;
             Label = label;
-            Text = Describe(kind, id);
-            Tint = OfferBadges.Tint(kind, id);
+            Anchor = AnchorFor(node);
+            _text = Describe(kind, id);
+            _tint = Tint(kind, id);
         }
 
         internal Node Node { get; }
         internal Label Label { get; }
-        internal string Text { get; }
-        internal Color Tint { get; }
+        internal Anchor Anchor { get; }
+
+        /// <summary>
+        /// Applies the label's appearance, but only when something about it has
+        /// actually changed.
+        /// </summary>
+        /// <remarks>
+        /// Setting a theme override marks the label's layout dirty; doing that
+        /// every frame is how a badge ends up recomputing its own size sixty
+        /// times a second for no reason.
+        /// </remarks>
+        internal void Refresh(int font)
+        {
+            if (_font == font && Label.Text == _text) return;
+
+            _font = font;
+            Label.Text = _text;
+            Label.AddThemeColorOverride("font_color", _tint);
+            Label.AddThemeFontSizeOverride("font_size", font);
+        }
     }
 }
