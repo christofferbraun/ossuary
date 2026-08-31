@@ -58,8 +58,18 @@ internal sealed class OfferBadges
     /// <summary>Consecutive failed ticks before giving up for the session.</summary>
     private const int MaxStrikes = 10;
 
-    /// <summary>Clear space between a badge and the icon it annotates.</summary>
-    private const float Gap = 8f;
+    /// <summary>Clear space between a badge and the thing it annotates.</summary>
+    private const float Gap = 10f;
+
+    /// <summary>
+    /// Clear space when the badge sits beside something rather than above it.
+    /// </summary>
+    /// <remarks>
+    /// Wider than <see cref="Gap"/> because a control's rect is generally a
+    /// little larger than the artwork drawn inside it, so a gap measured from
+    /// the rect reads as almost touching the icon.
+    /// </remarks>
+    private const float SideGap = 36f;
 
     /// <summary>Scanning four times a second is imperceptible and cheap.</summary>
     private static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(250);
@@ -169,9 +179,15 @@ internal sealed class OfferBadges
             var (kind, id) = Identify(node);
             if (id is null) continue;
 
+            // Nothing to say is not worth a label. The table covers the whole
+            // game, so a miss here almost always means we matched a node we
+            // should not have - which is how an empty slot on the loot screen
+            // ended up captioned "no data".
+            if (Describe(kind, id) is not { } text) continue;
+
             var label = NewLabel();
             _layer.AddChild(label);
-            _targets.Add(new Target(node, label, kind, id));
+            _targets.Add(new Target(node, label, text, Tint(kind, id)));
 
             if (_announced) continue;
             _announced = true;
@@ -233,16 +249,12 @@ internal sealed class OfferBadges
                     rect.Position.X + (rect.Size.X - size.X) * 0.5f,
                     rect.End.Y - size.Y - rect.Size.Y * 0.035f),
 
-                // A reward row is wide and already carries its own text, so the
-                // badge goes at its right-hand end.
-                Anchor.RowRight => new Vector2(
-                    rect.End.X - size.X - 12f,
-                    rect.Position.Y + (rect.Size.Y - size.Y) * 0.5f),
-
-                // An icon inside a reward row has clear space to its left, and
-                // sitting there covers none of the icon.
-                Anchor.IconLeft => new Vector2(
-                    rect.Position.X - size.X - Gap,
+                // Beside it, on the left: reward rows, event options, and icons
+                // drawn inside a row. All of these have clear space to their
+                // left, and putting every one of them in the same place is what
+                // makes the badges read as one feature rather than several.
+                Anchor.Left => new Vector2(
+                    rect.Position.X - size.X - SideGap,
                     rect.Position.Y + (rect.Size.Y - size.Y) * 0.5f),
 
                 // Icons laid out in a grid - the shop - have neighbours to
@@ -252,6 +264,11 @@ internal sealed class OfferBadges
                     rect.Position.X + (rect.Size.X - size.X) * 0.5f,
                     rect.Position.Y - size.Y - Gap),
             };
+
+            // Rather than let a left-hand badge run off the screen, put it on
+            // the other side. Better an unexpected side than a rating the
+            // player cannot read.
+            if (target.Anchor == Anchor.Left && pos.X < 4f) pos.X = rect.End.X + SideGap;
 
             // A badge drawn off the edge of the screen is a badge nobody asked
             // for; the subject is mid-animation or parked offstage.
@@ -590,24 +607,27 @@ internal sealed class OfferBadges
     private enum Anchor
     {
         CardBottom,
-        RowRight,
-        IconLeft,
+        Left,
         IconAbove,
     }
 
     private static Anchor AnchorFor(Node node) => node switch
     {
         NCard => Anchor.CardBottom,
-        NRewardButton or NEventOptionButton => Anchor.RowRight,
 
-        // A relic or potion drawn inside a reward row has clear space beside
-        // it; one in the shop's grid has neighbours either side but nothing
-        // above.
-        _ => HasAncestor<NRewardButton>(node) ? Anchor.IconLeft : Anchor.IconAbove,
+        // Anything laid out as a row - a reward, one of an ancient's blessings
+        // - gets its badge beside it on the left.
+        NRewardButton or NEventOptionButton => Anchor.Left,
+
+        // A relic or potion drawn inside a reward row goes to the left too, so
+        // it lines up with the rows around it. One in the shop's grid has
+        // neighbours either side but clear space above.
+        _ => HasAncestor<NRewardButton>(node) ? Anchor.Left : Anchor.IconAbove,
     };
 
     /// <summary>
-    /// The badge text: grade, then the raw score, then the numbers behind it.
+    /// The badge text — grade, then the raw score, then the numbers behind it —
+    /// or null when there is no rating for this thing.
     /// </summary>
     /// <remarks>
     /// The score is shown alongside the letter because the letter is a banded
@@ -619,10 +639,10 @@ internal sealed class OfferBadges
     /// number is noise, and saying so is more useful than either suppressing it
     /// or presenting it as though it were solid.
     /// </remarks>
-    private static string Describe(RatingKind kind, string id)
+    private static string? Describe(RatingKind kind, string id)
     {
         var table = Ratings.Table;
-        if (table is null || !table.TryGet(kind, id, out var entry)) return "no data";
+        if (table is null || !table.TryGet(kind, id, out var entry)) return null;
 
         var parts = new List<string>(4) { $"{entry.Tier} {entry.Score}", $"{entry.WinRate:0.#}% win" };
         if (entry.PickRate is { } pick) parts.Add($"{pick:0.#}% pick");
@@ -654,13 +674,13 @@ internal sealed class OfferBadges
         private readonly Color _tint;
         private int _font;
 
-        internal Target(Node node, Label label, RatingKind kind, string id)
+        internal Target(Node node, Label label, string text, Color tint)
         {
             Node = node;
             Label = label;
             Anchor = AnchorFor(node);
-            _text = Describe(kind, id);
-            _tint = Tint(kind, id);
+            _text = text;
+            _tint = tint;
         }
 
         internal Node Node { get; }
