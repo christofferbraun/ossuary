@@ -15,6 +15,7 @@
 
 <p align="center">
   <a href="docs/ROADMAP.md"><b>Roadmap</b></a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
   <a href="docs/COMPAT.md">Compatibility</a> ·
   <a href="#using-it">Using it</a> ·
   <a href="#tier-ratings">How the ratings work</a>
@@ -151,6 +152,7 @@ src/Ossuary.Grading/   tier banding, confidence, and the table reader —
 tests/                 unit tests for the above, runnable without the game
 tools/                 build, install, log and crash-inspection scripts
 tools/FetchCodexData/  build-time only: refetches and regrades the table
+CHANGELOG.md           every version, and what changed in it
 docs/ROADMAP.md        what is shipped, what is in flight, and why
 docs/COMPAT.md         every hook and patch, and the build it was verified against
 ```

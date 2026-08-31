@@ -28,7 +28,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <Version>0.1.0</Version>
+    <!--
+      The one place the version is declared. The assembly, the Workshop
+      manifest, the status panel in game and the tag the release gate checks
+      all read it from here. See CHANGELOG.md for what each version means.
+    -->
+    <Version>0.6.1</Version>
     <Authors>christofferbraun</Authors>
     <Product>Ossuary</Product>
   </PropertyGroup>
