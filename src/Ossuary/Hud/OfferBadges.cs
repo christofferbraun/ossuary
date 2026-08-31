@@ -82,7 +82,11 @@ internal sealed class OfferBadges
     private readonly List<Target> _targets = new();
     private readonly List<Node> _found = new();
 
+    /// <summary>Consecutive failed ticks before giving up for the session.</summary>
+    private const int MaxStrikes = 10;
+
     private DateTime _lastScan = DateTime.MinValue;
+    private int _strikes;
     private bool _announced;
     private bool _failed;
 
@@ -124,12 +128,23 @@ internal sealed class OfferBadges
             }
 
             Reposition();
+            _strikes = 0;
         }
         catch (Exception ex)
         {
+            // A single bad frame is not a reason to give up for the session.
+            // The previous design disabled itself on the first exception, which
+            // meant one transient failure early in a run silently took offer
+            // ratings out for good - and, because badges were parented to game
+            // nodes back then, left the ones already attached frozen on screen
+            // rather than removing them.
+            Log.Error($"offer ratings failed ({++_strikes}/{MaxStrikes})", ex);
+
+            if (_strikes < MaxStrikes) return;
+
             _failed = true;
             Clear();
-            Log.Error("offer ratings failed and are disabled for this session", ex);
+            Log.Error("offer ratings are disabled for this session", ex);
         }
     }
 
@@ -340,7 +355,20 @@ internal sealed class OfferBadges
         // Our own HUD holds no offers and walking it wastes the budget.
         if (node.Name == "OssuaryHud") return;
 
-        if (IsOffered(node)) offers.Add(node);
+        // One unhappy node must not end the walk. A game node can be in any
+        // state at any moment - half-initialised, being pooled, mid-teardown -
+        // and a scan that aborts on the first of those stops annotating
+        // everything else on screen.
+        try
+        {
+            if (IsOffered(node)) offers.Add(node);
+        }
+        catch (Exception)
+        {
+            // Not this node, then. Deliberately not logged: this runs four
+            // times a second over the whole tree, so a node the game keeps in
+            // an odd state would fill the log rather than tell us anything.
+        }
 
         foreach (var child in node.GetChildren()) Collect(child, offers);
     }
@@ -350,8 +378,15 @@ internal sealed class OfferBadges
         NCard card => card.Model is { Pile: null, DeckVersion: null } model
                       && Array.IndexOf(Offerable, model.Type) >= 0
                       && !IsYourOwnCollection(card),
-        NRelic relic => relic.Model is not null && !HasAncestor<NRelicInventory>(relic),
-        NPotion potion => potion.Model is not null && !HasAncestor<NPotionContainer>(potion),
+
+        // Ancestry is tested before the model, and the model read is guarded.
+        // NRelic.Model and NPotion.Model are not nullable properties: their
+        // getters *throw* when nothing has been assigned yet. The empty slots
+        // in your potion belt are exactly that, so `Model is not null` never
+        // returned false here - it raised, took the whole scan down with it,
+        // and disabled offer ratings for the rest of the session.
+        NRelic relic => !HasAncestor<NRelicInventory>(relic) && HasModel(relic),
+        NPotion potion => !HasAncestor<NPotionContainer>(potion) && HasModel(potion),
 
         // A reward row, for the cases where the reward draws no node of its own.
         // PotionReward overrides CreateIcon and produces an NPotion, which the
@@ -360,6 +395,32 @@ internal sealed class OfferBadges
         NRewardButton button => button.Reward is RelicReward or PotionReward,
         _ => false,
     };
+
+    /// <summary>
+    /// Whether this node has been given a model, without asking a getter that
+    /// answers "no" by throwing.
+    /// </summary>
+    /// <remarks>
+    /// Reading the private backing field by reflection would avoid the throw,
+    /// but silently binds us to a field name; catching is version-proof and the
+    /// cost is a handful of exceptions per second in the one case that raises.
+    /// </remarks>
+    private static bool HasModel(Node node)
+    {
+        try
+        {
+            return node switch
+            {
+                NRelic relic => relic.Model is not null,
+                NPotion potion => potion.Model is not null,
+                _ => false,
+            };
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// True when this card is being shown to you as something you already have,
@@ -423,15 +484,34 @@ internal sealed class OfferBadges
 
     private static bool HasAncestor<T>(Node node) where T : Node => Ancestor<T>(node) is not null;
 
-    private static (RatingKind Kind, string? Id) Identify(Node node) => node switch
+    /// <summary>
+    /// What this node is and which rating to look up, or a null id if it cannot
+    /// say.
+    /// </summary>
+    /// <remarks>
+    /// The relic and potion arms are inside the guard for the same reason as
+    /// <see cref="HasModel"/>: their <c>Model</c> getters throw rather than
+    /// return null, and <c>?.</c> does not help with a getter that raises.
+    /// </remarks>
+    private static (RatingKind Kind, string? Id) Identify(Node node)
     {
-        NCard card => (RatingKind.Card, card.Model?.Id.ToString()),
-        NRelic relic => (RatingKind.Relic, relic.Model?.Id.ToString()),
-        NPotion potion => (RatingKind.Potion, potion.Model?.Id.ToString()),
-        NRewardButton { Reward: RelicReward relic } => (RatingKind.Relic, relic.Relic?.Id.ToString()),
-        NRewardButton { Reward: PotionReward potion } => (RatingKind.Potion, potion.Potion?.Id.ToString()),
-        _ => (RatingKind.Card, null),
-    };
+        try
+        {
+            return node switch
+            {
+                NCard card => (RatingKind.Card, card.Model?.Id.ToString()),
+                NRelic relic => (RatingKind.Relic, relic.Model?.Id.ToString()),
+                NPotion potion => (RatingKind.Potion, potion.Model?.Id.ToString()),
+                NRewardButton { Reward: RelicReward relic } => (RatingKind.Relic, relic.Relic?.Id.ToString()),
+                NRewardButton { Reward: PotionReward potion } => (RatingKind.Potion, potion.Potion?.Id.ToString()),
+                _ => (RatingKind.Card, null),
+            };
+        }
+        catch (InvalidOperationException)
+        {
+            return (RatingKind.Card, null);
+        }
+    }
 
     /// <summary>
     /// The badge text: grade, then the raw score, then the numbers behind it.
