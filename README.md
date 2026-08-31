@@ -13,6 +13,13 @@
   <img alt="license" src="https://img.shields.io/badge/license-MIT-2c7a6c">
 </p>
 
+<p align="center">
+  <a href="docs/ROADMAP.md"><b>Roadmap</b></a> ·
+  <a href="docs/COMPAT.md">Compatibility</a> ·
+  <a href="#using-it">Using it</a> ·
+  <a href="#tier-ratings">How the ratings work</a>
+</p>
+
 ---
 
 Ossuary shows you the numbers you would otherwise have to remember: what is left
@@ -57,8 +64,8 @@ steps towards one. Each is independent and can ship in any order.
 | **v2M1** Party debuff coverage | whether anyone in a co-op party is holding Vulnerable or Weak **this turn** | built, in testing |
 | **v2M2** Per-panel show/hide | an `ON`/`OFF` control on each panel in layout mode, saved between sessions | built, in testing |
 
-`docs/ROADMAP.md` carries the reasoning behind each — what it is for, and why it
-works the way it does.
+**[docs/ROADMAP.md](docs/ROADMAP.md)** carries the reasoning behind each — what
+it is for, why it works the way it does, and what is deliberately not planned.
 
 ### Not planned
 
