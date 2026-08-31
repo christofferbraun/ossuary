@@ -97,7 +97,7 @@ public partial class HudController : CanvasLayer
                 Visible = false,
                 MouseFilter = Control.MouseFilterEnum.Ignore,
                 Position = new Vector2(24, 940),
-                Text = $"OSSUARY LAYOUT MODE — drag panels · - and + resize text · {_settings.LayoutKey} to finish",
+                Text = $"OSSUARY LAYOUT MODE — drag panels · click ON/OFF to show or hide one · - and + resize text · {_settings.LayoutKey} to finish",
             };
             _hint.AddThemeColorOverride("font_color", new Color(0.42f, 0.78f, 0.70f));
             _root.AddChild(_hint);
@@ -134,6 +134,11 @@ public partial class HudController : CanvasLayer
         // Panels isolate their own failures, so one bad panel cannot stop the
         // loop that updates the others.
         for (var i = 0; i < _panels.Count; i++) _panels[i].Tick(delta);
+
+        // A panel resizes as its contents change - a longer draw pile, a new
+        // enemy - so in layout mode the corners are recomputed every frame
+        // rather than left where they were when it opened.
+        if (_layoutMode) RepositionToggles();
     }
 
     public override void _UnhandledKeyInput(InputEvent @event)
@@ -179,6 +184,16 @@ public partial class HudController : CanvasLayer
     private void ApplyTextScale()
     {
         foreach (var panel in _panels) panel.ApplyTextScale(_settings.ClampedTextScale);
+
+        // Resizing happens a frame or two later, so the corners are stale until
+        // then; the next frame in layout mode puts them right.
+        RepositionToggles();
+    }
+
+    /// <summary>Puts every on/off control back on its panel's corner.</summary>
+    private void RepositionToggles()
+    {
+        foreach (var panel in _panels) panel.PositionToggle();
     }
 
     /// <summary>
@@ -198,6 +213,18 @@ public partial class HudController : CanvasLayer
         {
             case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } down:
             {
+                // The on/off control wins over dragging. It sits inside the
+                // panel, so without this every click on it would also start a
+                // drag and the panel would jump as you toggled it.
+                if (ToggleAt(down.Position) is { } toggled)
+                {
+                    var off = toggled.ToggleHidden();
+                    SavePlacements();
+                    Log.Info($"panel '{toggled.Name}' {(off ? "hidden" : "shown")}");
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
+
                 var panel = PanelAt(down.Position);
                 if (panel?.Root is null) return;
                 _dragging = panel;
@@ -219,10 +246,24 @@ public partial class HudController : CanvasLayer
             {
                 if (_dragging?.Root is null) return;
                 _dragging.Root.GlobalPosition = motion.Position - _dragGrip;
+                _dragging.PositionToggle();
                 GetViewport().SetInputAsHandled();
                 break;
             }
         }
+    }
+
+    /// <summary>The panel whose on/off control is under this point, if any.</summary>
+    private HudPanel? ToggleAt(Vector2 point)
+    {
+        // Topmost first, to match PanelAt: where two panels overlap, the one
+        // you can see is the one you are clicking.
+        for (var i = _panels.Count - 1; i >= 0; i--)
+        {
+            if (_panels[i].ToggleRect is { } rect && rect.HasPoint(point)) return _panels[i];
+        }
+
+        return null;
     }
 
     private HudPanel? PanelAt(Vector2 point)
@@ -255,6 +296,7 @@ public partial class HudController : CanvasLayer
 
         _layoutMode = on;
         foreach (var panel in _panels) panel.SetArranging(on);
+        if (on) RepositionToggles();
         if (_hint is not null) _hint.Visible = on;
         if (_root is not null) _root.Modulate = on ? new Color(1f, 1f, 1f, 0.85f) : Colors.White;
 
@@ -264,7 +306,7 @@ public partial class HudController : CanvasLayer
             SavePlacements();
         }
 
-        Log.Info($"layout mode {(on ? "on — drag panels" : "off")}");
+        Log.Info($"layout mode {(on ? "on — drag panels, click ON/OFF to hide one" : "off")}");
     }
 
     private void SavePlacements()
@@ -273,7 +315,7 @@ public partial class HudController : CanvasLayer
         {
             if (panel.Root is null) continue;
             var at = panel.Root.Position;
-            _settings.Panels[panel.Name] = new PanelPlacement { X = at.X, Y = at.Y };
+            _settings.Panels[panel.Name] = new PanelPlacement { X = at.X, Y = at.Y, Hidden = panel.Hidden };
         }
 
         _settings.Save();
@@ -283,13 +325,18 @@ public partial class HudController : CanvasLayer
     {
         if (!panel.TryBuild() || panel.Root is null) return;
 
-        // A saved position wins over the panel's built-in default.
+        // A saved position and on/off state win over the panel's defaults.
         if (_settings.Panels.TryGetValue(panel.Name, out var placement))
         {
             panel.Root.Position = new Vector2(placement.X, placement.Y);
+            panel.SetHidden(placement.Hidden);
         }
 
         _root?.AddChild(panel.Root);
         _panels.Add(panel);
+
+        // After the panel is in the tree, so the toggle can be placed from the
+        // panel's real rect rather than from the size it was built at.
+        if (_root is not null) panel.AttachToggle(_root);
     }
 }
