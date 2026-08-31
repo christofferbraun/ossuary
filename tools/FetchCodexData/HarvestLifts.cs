@@ -15,22 +15,31 @@ namespace Ossuary.Tools.FetchCodexData;
 /// Build-time only, and rare: once per data version, not once per release.
 /// </para>
 /// <para>
-/// <b>Why it is one request per card, and why that cannot be reduced.</b> A
-/// request asks "given I hold exactly these cards, what is everything worth",
-/// so <c>deck=[h]</c> against every offered id returns a whole row of the
-/// matrix — about 500 values from one request. Batching the other axis does not
-/// help. In logs, a request with deck subset S returns, for each candidate c,
-/// the sum of <c>log lift(h, c)</c> over S: one linear measurement per column,
-/// with the same measurement vector shared across every column. Recovering a
-/// dense column of N unknowns needs N independent measurements, so N requests
-/// is the floor for exact recovery, not an implementation shortcoming.
+/// <b>Which endpoint, and why this one.</b>
+/// <c>GET /api/draft-recs/{item_type}/{item_id}</c> — "given a card/relic you
+/// already have, the cards players most often draft when offered them, ranked
+/// by lift over each card's baseline take-rate". That is the lift table, one
+/// row per held item, stated as such.
 /// </para>
 /// <para>
-/// Sparse recovery could in principle beat that bound, since most pairs do not
-/// interact. It is not attempted: it would depend on a sparsity that has never
-/// been measured, and on summing hundreds of logs without the API's rounding
-/// destroying the signal. A one-off half-hour is cheaper than being subtly
-/// wrong.
+/// The alternative is to probe <c>POST /api/draft-advice</c> with single-card
+/// decks and divide by a baseline, recovering each lift by inference. That
+/// works only if the scoring really is exactly multiplicative and context-free,
+/// and it reads fields the endpoint does not document. This endpoint returns
+/// <c>lift</c> directly and names its fields, so the same table costs the same
+/// number of requests with none of the inference. It also covers relics, which
+/// the deck-probing approach could not reach at all — and relic synergies are a
+/// large part of what makes advice deck-specific.
+/// </para>
+/// <para>
+/// <b>Why it is one request per item, and why that cannot be reduced.</b> The
+/// rows are the model: each held item's row is an independent set of numbers,
+/// so N items means N rows and there is no request that returns two rows. The
+/// only bulk alternative Codex offers is <c>/api/exports/runs</c>, the entire
+/// run corpus as gzipped JSONL, from which lifts could be recomputed — that
+/// trades several hundred small requests for a multi-gigabyte download and a
+/// reimplementation of their model, which is worse on every axis that matters
+/// here.
 /// </para>
 /// <para>
 /// So the run is long, and the work went into making a long run survivable:
@@ -39,11 +48,11 @@ namespace Ossuary.Tools.FetchCodexData;
 /// starting over.
 /// </para>
 /// <para>
-/// <b>Unverified against a live response.</b> Codex declares no response schema
-/// for this endpoint and their API was unreachable when this was written, so the
-/// field names are inferred. The parser tries the plausible spellings and prints
-/// the raw body when none matches, so the first real run either works or says
-/// exactly what to change.
+/// <b>What is still inferred.</b> The field <em>values</em> are documented;
+/// the container's shape is not — <c>recommends</c> could be a map keyed by id
+/// or a list of objects carrying one. Both are handled, and
+/// <c>--probe-lifts</c> fetches a single row and prints it so the shape can be
+/// confirmed for the price of one request rather than a whole harvest.
 /// </para>
 /// </remarks>
 internal static class HarvestLifts
@@ -58,9 +67,75 @@ internal static class HarvestLifts
     /// </remarks>
     private const double Meaningful = 0.005;
 
-    private static readonly string[] ListFields = ["results", "offers", "advice", "cards", "items"];
-    private static readonly string[] IdFields = ["id", "card_id", "cardId"];
-    private static readonly string[] ScoreFields = ["score", "value", "adjusted_score", "adjustedScore"];
+    /// <summary>
+    /// Below this many observed offers, a lift is noise wearing a number.
+    /// </summary>
+    /// <remarks>
+    /// The endpoint reports <c>offers</c> as the sample behind each pair. A
+    /// lift computed from a handful of drafts will be extreme and meaningless,
+    /// and carrying it would let one player's oddity move an offered card's
+    /// grade.
+    /// </remarks>
+    private const int MinOffers = 50;
+
+    /// <summary>Item types to harvest, in the plural spelling Codex uses elsewhere.</summary>
+    private static readonly string[] Types = ["cards", "relics"];
+
+    private static readonly string[] ListFields = ["recommends", "recommendations", "results", "cards", "items"];
+    private static readonly string[] IdFields = ["id", "card_id", "cardId", "item_id", "itemId"];
+    private static readonly string[] LiftFields = ["lift"];
+    private static readonly string[] OfferFields = ["offers", "n", "sample"];
+
+    /// <summary>
+    /// Fetches one row and prints it, so the response shape can be confirmed
+    /// before committing to a run of several hundred requests.
+    /// </summary>
+    internal static async Task<int> Probe(HttpClient http, string baseUrl, string repoRoot)
+    {
+        var items = ReadIds(repoRoot);
+        if (items.Count == 0)
+        {
+            Console.Error.WriteLine("no ids in the bundled table; run the ratings fetch first");
+            return 1;
+        }
+
+        var (type, id) = items[0];
+        var url = $"{baseUrl}/api/draft-recs/{type}/{id}";
+        Console.WriteLine($"GET {url}\n");
+
+        using var response = await http.GetAsync(url);
+        var body = await response.Content.ReadAsStringAsync();
+
+        Console.WriteLine($"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
+        foreach (var (name, values) in response.Headers)
+        {
+            if (name.StartsWith("X-", StringComparison.OrdinalIgnoreCase) || name == "Retry-After")
+            {
+                Console.WriteLine($"  {name}: {string.Join(", ", values)}");
+            }
+        }
+
+        Console.WriteLine($"\n{Trim(body, 4000)}");
+
+        if (!response.IsSuccessStatusCode) return 1;
+
+        try
+        {
+            var parsed = Parse(body);
+            Console.WriteLine($"\nparsed {parsed.Count} partner(s) with a usable lift");
+            foreach (var (partner, lift, offers) in parsed.Take(5))
+            {
+                Console.WriteLine($"  {partner}\tlift {lift:0.####}\toffers {offers}");
+            }
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"\ncould not parse: {ex.Message}");
+            return 1;
+        }
+    }
 
     internal static async Task<int> Run(HttpClient http, string baseUrl, string repoRoot, string tier)
     {
@@ -69,10 +144,10 @@ internal static class HarvestLifts
         var partialPath = Path.Combine(checkpointDir, "lifts.partial.tsv");
         var donePath = Path.Combine(checkpointDir, "done.txt");
 
-        var ids = ReadCardIds(repoRoot);
-        if (ids.Count == 0)
+        var items = ReadIds(repoRoot);
+        if (items.Count == 0)
         {
-            Console.Error.WriteLine("no card ids in the bundled table; run the ratings fetch first");
+            Console.Error.WriteLine("no ids in the bundled table; run the ratings fetch first");
             return 1;
         }
 
@@ -84,50 +159,46 @@ internal static class HarvestLifts
             ? File.ReadAllLines(donePath).Where(l => l.Length > 0).ToHashSet(StringComparer.OrdinalIgnoreCase)
             : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        var remaining = ids.Where(id => !done.Contains(id)).ToList();
+        var remaining = items.Where(i => !done.Contains(Key(i))).ToList();
         if (done.Count > 0)
         {
-            Console.WriteLine($"resuming: {done.Count} of {ids.Count} rows already harvested");
+            Console.WriteLine($"resuming: {done.Count} of {items.Count} rows already harvested");
         }
 
         var eta = TimeSpan.FromSeconds(remaining.Count * limit.Delay.TotalSeconds);
         Console.WriteLine($"{remaining.Count} requests to go — about {eta.TotalMinutes:F0} minutes");
         Console.WriteLine("interrupting is safe; rerun to resume\n");
 
-        var baseline = await Advice(http, baseUrl, [], ids, limit);
-        Console.WriteLine($"baseline: {baseline.Count} scores\n");
-
         var started = Stopwatch.StartNew();
         var pairs = 0;
+        var empty = 0;
 
         for (var i = 0; i < remaining.Count; i++)
         {
-            var held = remaining[i];
-            await Task.Delay(limit.Delay);
+            var item = remaining[i];
+            if (i > 0) await Task.Delay(limit.Delay);
 
-            var scored = await Advice(http, baseUrl, [held], ids, limit);
+            var recs = await Recommendations(http, baseUrl, item, limit);
             var rows = new List<string>();
 
-            foreach (var (candidate, score) in scored)
+            foreach (var (candidate, lift, offers) in recs)
             {
-                if (!baseline.TryGetValue(candidate, out var start) || start <= 0) continue;
-
-                // The diagonal is kept on purpose. lift(X, X) is "I already hold
-                // one X — how much do I want another", which is a real question
-                // and not a degenerate one.
-                var lift = score / start;
+                if (offers < MinOffers) continue;
                 if (Math.Abs(lift - LiftTable.Neutral) < Meaningful) continue;
 
-                rows.Add(string.Create(CultureInfo.InvariantCulture, $"{held}\t{candidate}\t{lift:0.####}"));
+                rows.Add(string.Create(
+                    CultureInfo.InvariantCulture, $"{item.Id}\t{candidate}\t{lift:0.####}"));
             }
+
+            if (recs.Count == 0) empty++;
 
             // Checkpoint before recording the row as done, so a crash between
             // the two costs a repeated request rather than a missing row.
             if (rows.Count > 0) File.AppendAllLines(partialPath, rows);
-            File.AppendAllLines(donePath, [held]);
+            File.AppendAllLines(donePath, [Key(item)]);
             pairs += rows.Count;
 
-            if ((i + 1) % 20 == 0 || i == remaining.Count - 1)
+            if ((i + 1) % 25 == 0 || i == remaining.Count - 1)
             {
                 var per = started.Elapsed.TotalSeconds / (i + 1);
                 var left = TimeSpan.FromSeconds(per * (remaining.Count - i - 1));
@@ -136,20 +207,28 @@ internal static class HarvestLifts
             }
         }
 
-        Finalise(outputPath, partialPath, donePath, ids.Count);
+        if (empty > 0)
+        {
+            // Codex says "Empty recommends until the build job has run", so an
+            // all-empty harvest means their model has not been built rather
+            // than that anything here is wrong. Worth saying plainly.
+            Console.WriteLine($"\n{empty:N0} of {remaining.Count:N0} rows came back with no recommendations.");
+        }
+
+        Finalise(outputPath, partialPath, donePath, items.Count);
         return 0;
     }
 
-    private static async Task<Dictionary<string, double>> Advice(
-        HttpClient http, string baseUrl, IReadOnlyList<string> deck, IReadOnlyList<string> offered, RateLimit limit)
+    private static string Key((string Type, string Id) item) => $"{item.Type}/{item.Id}";
+
+    private static async Task<IReadOnlyList<(string Partner, double Lift, int Offers)>> Recommendations(
+        HttpClient http, string baseUrl, (string Type, string Id) item, RateLimit limit)
     {
         const int attempts = 5;
 
         for (var attempt = 1; ; attempt++)
         {
-            var payload = JsonSerializer.Serialize(new { deck, offered, lang = "eng" });
-            using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-            using var response = await http.PostAsync($"{baseUrl}/api/draft-advice", content);
+            using var response = await http.GetAsync($"{baseUrl}/api/draft-recs/{item.Type}/{item.Id}");
 
             if (response.StatusCode == HttpStatusCode.TooManyRequests && attempt < attempts)
             {
@@ -161,6 +240,11 @@ internal static class HarvestLifts
                 await Task.Delay(wait);
                 continue;
             }
+
+            // An item the draft model has never seen is a fact about that item,
+            // not a failure: curses, starters and anything never offered as a
+            // reward have no draft history.
+            if (response.StatusCode == HttpStatusCode.NotFound) return [];
 
             if ((int)response.StatusCode >= 500 && attempt < attempts)
             {
@@ -175,49 +259,88 @@ internal static class HarvestLifts
         }
     }
 
-    /// <summary>Pulls id/score pairs out of a response whose shape is not documented.</summary>
-    private static Dictionary<string, double> Parse(string body)
+    /// <summary>
+    /// Pulls partner/lift/sample triples out of a recommendations response.
+    /// </summary>
+    /// <remarks>
+    /// The field names are Codex's own — <c>lift</c> and <c>offers</c>, as
+    /// documented on the endpoint. Only the container is guessed at: a map
+    /// keyed by id and a list of objects each carrying one are both accepted,
+    /// because the documentation says "empty <c>recommends</c>" without saying
+    /// which it is.
+    /// </remarks>
+    private static IReadOnlyList<(string Partner, double Lift, int Offers)> Parse(string body)
     {
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
 
-        var array = root.ValueKind == JsonValueKind.Array ? root : default;
-        if (array.ValueKind != JsonValueKind.Array)
+        var container = root;
+        if (root.ValueKind == JsonValueKind.Object)
         {
             foreach (var field in ListFields)
             {
-                if (root.TryGetProperty(field, out var candidate) && candidate.ValueKind == JsonValueKind.Array)
+                if (root.TryGetProperty(field, out var candidate)
+                    && candidate.ValueKind is JsonValueKind.Array or JsonValueKind.Object)
                 {
-                    array = candidate;
+                    container = candidate;
                     break;
                 }
             }
         }
 
-        if (array.ValueKind != JsonValueKind.Array)
+        var found = new List<(string, double, int)>();
+
+        switch (container.ValueKind)
+        {
+            case JsonValueKind.Array:
+                foreach (var entry in container.EnumerateArray())
+                {
+                    var id = First(entry, IdFields)?.GetString();
+                    if (id is not null && TryRead(entry, out var lift, out var offers))
+                    {
+                        found.Add((id, lift, offers));
+                    }
+                }
+
+                break;
+
+            case JsonValueKind.Object:
+                foreach (var property in container.EnumerateObject())
+                {
+                    if (TryRead(property.Value, out var lift, out var offers))
+                    {
+                        found.Add((property.Name, lift, offers));
+                    }
+                }
+
+                break;
+        }
+
+        // An empty list is a legitimate answer - Codex says recommendations are
+        // empty until their build job has run - so it is not an error. A
+        // container we could not even find is.
+        if (found.Count == 0 && container.ValueKind is not (JsonValueKind.Array or JsonValueKind.Object))
         {
             throw new InvalidOperationException(
-                "could not find the list of scored offers in the draft-advice response. "
-                + $"Tried {string.Join(", ", ListFields)}. Body begins: {Trim(body)}");
+                $"could not find the recommendations in the response. Tried {string.Join(", ", ListFields)}. "
+                + $"Body begins: {Trim(body, 400)}");
         }
 
-        var scores = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in array.EnumerateArray())
-        {
-            var id = First(entry, IdFields)?.GetString();
-            var score = First(entry, ScoreFields);
-            if (id is null || score is null) continue;
-            if (score.Value.TryGetDouble(out var value)) scores[id] = value;
-        }
+        return found;
+    }
 
-        if (scores.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"found the list but no id/score pairs. Tried ids {string.Join(", ", IdFields)} and "
-                + $"scores {string.Join(", ", ScoreFields)}. Body begins: {Trim(body)}");
-        }
+    private static bool TryRead(JsonElement entry, out double lift, out int offers)
+    {
+        lift = 0;
+        offers = 0;
 
-        return scores;
+        if (entry.ValueKind != JsonValueKind.Object) return false;
+        if (First(entry, LiftFields) is not { } liftValue || !liftValue.TryGetDouble(out lift)) return false;
+
+        // No sample size reported is treated as "enough": the alternative is to
+        // silently drop every pair when Codex renames the field.
+        offers = First(entry, OfferFields) is { } n && n.TryGetInt32(out var parsed) ? parsed : int.MaxValue;
+        return true;
     }
 
     private static JsonElement? First(JsonElement element, string[] names)
@@ -232,26 +355,41 @@ internal static class HarvestLifts
         return null;
     }
 
-    private static string Trim(string body) => body.Length <= 400 ? body : body[..400] + "…";
+    private static string Trim(string body, int max) => body.Length <= max ? body : body[..max] + "…";
 
-    private static List<string> ReadCardIds(string repoRoot)
+    /// <summary>
+    /// Every id worth asking about, from the table we already ship.
+    /// </summary>
+    /// <remarks>
+    /// Cards and relics. Potions are excluded deliberately: they are consumed
+    /// rather than held, so "what do players draft given they hold a Fire
+    /// Potion" is not a question about a deck.
+    /// </remarks>
+    private static List<(string Type, string Id)> ReadIds(string repoRoot)
     {
         var path = Path.Combine(repoRoot, "src", "Ossuary", "Data", "ratings.tsv");
         if (!File.Exists(path)) return [];
 
-        var ids = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var ids = new List<(string, string)>();
+
         foreach (var line in File.ReadLines(path))
         {
             if (line.StartsWith('#') || line.StartsWith("kind\t", StringComparison.Ordinal)) continue;
+
             var f = line.Split('\t');
-            if (f.Length > 3 && f[0] == "cards") ids.Add(f[3]);
+            if (f.Length <= 3) continue;
+            if (Array.IndexOf(Types, f[0]) < 0) continue;
+            if (!seen.Add($"{f[0]}/{f[3]}")) continue;
+
+            ids.Add((f[0], f[3]));
         }
 
         return ids;
     }
 
     /// <summary>Turns the checkpoint into the bundled table and clears it.</summary>
-    private static void Finalise(string outputPath, string partialPath, string donePath, int cards)
+    private static void Finalise(string outputPath, string partialPath, string donePath, int items)
     {
         var rows = File.Exists(partialPath) ? File.ReadAllLines(partialPath) : [];
         var sorted = rows
@@ -264,8 +402,10 @@ internal static class HarvestLifts
 
         var sb = new StringBuilder();
         sb.Append("# Ossuary deck-advice lift table — generated by tools/FetchCodexData --harvest-lifts\n");
-        sb.Append(CultureInfo.InvariantCulture, $"# cards\t{cards}\n");
+        sb.Append("# source\tGET /api/draft-recs/{item_type}/{item_id}\n");
+        sb.Append(CultureInfo.InvariantCulture, $"# items\t{items}\n");
         sb.Append(CultureInfo.InvariantCulture, $"# pairs\t{sorted.Count}\n");
+        sb.Append(CultureInfo.InvariantCulture, $"# min_offers\t{MinOffers}\n");
         sb.Append("held\tcandidate\tlift\n");
         foreach (var row in sorted) sb.Append(row).Append('\n');
 
@@ -274,8 +414,7 @@ internal static class HarvestLifts
         File.Delete(partialPath);
         File.Delete(donePath);
 
-        var density = cards > 0 ? sorted.Count / (double)(cards * cards) : 0;
         Console.WriteLine($"\nwrote {sorted.Count:N0} pairs to {outputPath} ({new FileInfo(outputPath).Length / 1024.0:F0} KB)");
-        Console.WriteLine($"density: {density:P2} of the {cards * cards:N0} possible pairs actually move a score");
+        Console.WriteLine($"from {items:N0} held items, {sorted.Count / (double)Math.Max(items, 1):F0} pairs each on average");
     }
 }

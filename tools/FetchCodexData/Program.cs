@@ -103,18 +103,37 @@ internal static class Program
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Ossuary-data-fetch (+https://github.com/christofferbraun/ossuary)");
 
-        if (args.Contains("--harvest-lifts"))
+        // Codex's own words: "Browse = un-keyed traffic (per IP); keyed tiers
+        // apply per X-API-Key." A key is never committed - it arrives from the
+        // environment, which is a GitHub secret in CI and a shell variable
+        // locally - and its only effect is to raise the rate we may pace at.
+        var apiKey = Environment.GetEnvironmentVariable("CODEX_API_KEY");
+        var keyed = !string.IsNullOrWhiteSpace(apiKey);
+        if (keyed) http.DefaultRequestHeaders.Add("X-API-Key", apiKey);
+
+        if (args.Contains("--harvest-lifts") || args.Contains("--probe-lifts"))
         {
-            // v2 groundwork: the pairwise model behind Codex's draft advice.
+            // v2M0 groundwork: the pairwise model behind Codex's draft advice.
             // Deliberately not part of the weekly refresh - it is one request
-            // per card and takes the better part of an hour. It discovers its
-            // own pacing, so it runs before the ratings path does.
+            // per item. It discovers its own pacing, so it runs before the
+            // ratings path does.
             //
-            // --tier lets a caller pace to a higher published tier if Codex
-            // ever grants one; unregistered callers get the general tier.
+            // The tier defaults to what the caller can actually claim: a keyed
+            // caller is at least 'registered', an un-keyed one is on the
+            // general tier no matter what it asks for. --tier overrides, for
+            // when Codex grants something higher.
             var tierIndex = Array.IndexOf(args, "--tier");
-            var tier = tierIndex >= 0 && tierIndex + 1 < args.Length ? args[tierIndex + 1] : "general";
-            return await HarvestLifts.Run(http, BaseUrl, repoRoot, tier);
+            var tier = tierIndex >= 0 && tierIndex + 1 < args.Length
+                ? args[tierIndex + 1]
+                : keyed ? "registered" : "general";
+
+            Console.WriteLine(keyed
+                ? $"authenticated with an API key; pacing to the '{tier}' tier"
+                : $"no CODEX_API_KEY set; pacing to the '{tier}' tier");
+
+            return args.Contains("--probe-lifts")
+                ? await HarvestLifts.Probe(http, BaseUrl, repoRoot)
+                : await HarvestLifts.Run(http, BaseUrl, repoRoot, tier);
         }
 
         _limit = await RateLimit.Discover(http, BaseUrl, "general");
