@@ -88,7 +88,7 @@ public partial class HudController : CanvasLayer
             Add(new DeckPanel(_settings));
             Add(new ForecastPanel(_settings));
 
-            _badges = new OfferBadges(_settings);
+            _badges = new OfferBadges(_settings, _root);
             if (_settings.CanaryPanel) Add(new CanaryPanel());
 
             _hint = new Label
@@ -117,9 +117,9 @@ public partial class HudController : CanvasLayer
 
     public override void _Process(double delta)
     {
-        // Runs even when the HUD is hidden: badges hang off the game's own
-        // nodes rather than this layer, so hiding the HUD has to actively
-        // remove them rather than simply stop drawing.
+        // Badges are drawn on this layer, so they are hidden with it — but the
+        // call still runs while hidden, cheaply, so the label set is dropped
+        // rather than left holding references to nodes the game has freed.
         //
         // Scanned from the viewport root rather than from NRun. Not everything
         // that offers you something lives under the run - Neow's opening relic
