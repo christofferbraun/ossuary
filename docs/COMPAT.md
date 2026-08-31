@@ -67,6 +67,26 @@ Two caveats, both deliberate:
 | --- | --- | --- | --- |
 | A `DrawCardsNextTurnPower` with `AmountOnTurnStart == 0` and `Amount > 0` is draw the player has earned this turn that applies next turn | Playing "draw N extra cards next turn" must move the odds immediately. The game's own guard is `if (AmountOnTurnStart == 0) return count;` — deliberate, so a power gained mid-turn cannot apply to a draw that already happened — which means the hook under-reports until the turn flips. | The type match silently stops applying and the estimate degrades to the hook's answer. No exception, slightly stale number. | `v0.107.1` |
 
+## Nodes Ossuary adds to the game's scene
+
+The offer ratings attach a `Label` to the game's own card, relic and potion
+nodes, so the badge moves with the thing it annotates and dies with it. This is
+the most invasive thing Ossuary does, and it is bounded on every side: only a
+`Label` is ever added, no property of a game node is changed, and the whole
+feature can be turned off with `offerRatings` in `user://ossuary.json`.
+
+| Host node | Attached | Removed when |
+| --- | --- | --- |
+| `NCard`, `NRelic`, `NPotion` | one child `Label` named `OssuaryRating` | the host is freed by the game, the HUD is hidden, or the setting is off |
+
+## Assumptions about specific game types
+
+| Assumption | Used for | If it breaks | Verified |
+| --- | --- | --- | --- |
+| `CardModel.Pile == null` means the card is being offered rather than held | Deciding which cards get a rating badge, without having to enumerate every screen that can offer one — a list that would silently go stale. `Pile` is `_owner?.Piles.FirstOrDefault(p => p.Cards.Contains(this))`, so it is null for a card with no owner or one not yet in a pile. | Badges appear on cards that are not offers. Guarded: more than 20 candidates on screen is treated as the rule having stopped being true, and no badges are drawn at all. | `v0.107.1` |
+| A relic outside `NRelicInventory`, or a potion outside `NPotionContainer`, is not yet owned | The same decision for relics and potions | Badges on owned relics/potions | `v0.107.1` |
+| `ModelId.ToString()` is `Category.Entry` (`CARD.BACKFLIP`), and `Entry` is the SNAKE_CASE of the model's class name | Resolving a game id to a Codex id. `RatingTable.Normalize` drops everything up to the last dot. | Every offer reads "no data" | Checked exhaustively offline: **296/296** bundled relic ids and **63/63** potion ids correspond to real game model classes. The only classes without a rating are `DEPRECATED_RELIC`, `VAKUU_CARD_SELECTOR`, `DEPRECATED_POTION` and a mock potion, none of which is ever offered. |
+
 ## Verified environment facts
 
 These were confirmed directly against the installed build rather than inferred

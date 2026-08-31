@@ -38,6 +38,9 @@ internal static class IntentReader
 {
     private static bool _failed;
 
+    /// <summary>Clears a latched failure so a new run starts fresh.</summary>
+    internal static void Reset() => _failed = false;
+
     /// <summary>
     /// Every live enemy's intent, or an empty list if they cannot be read.
     /// </summary>

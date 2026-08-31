@@ -35,7 +35,40 @@ internal static class CombatWatcher
     private static bool _everSeen;
 
     /// <summary>The combat in progress, or null outside one.</summary>
-    internal static ICombatState? Current => _current;
+    /// <remarks>
+    /// The subscription only ever hands us a state; nothing tells us when that
+    /// combat ended, so the last one would otherwise linger and the panels would
+    /// keep reporting a fight that is over. <c>CombatManager.IsOverOrEnding</c>
+    /// is the game's own signal — it is what <c>Hook.IterateCombatHookListeners</c>
+    /// checks before dispatching. Note that <c>ICombatState.IsLiveCombat()</c>
+    /// looks like the right answer and is not: on <c>CombatState</c> it returns
+    /// a constant <c>true</c>.
+    /// </remarks>
+    internal static ICombatState? Current
+    {
+        get
+        {
+            if (_current is null) return null;
+
+            var manager = CombatManager.Instance;
+            return manager is null || manager.IsOverOrEnding ? null : _current;
+        }
+    }
+
+    /// <summary>
+    /// Forgets the previous combat and clears any latched failure.
+    /// </summary>
+    /// <remarks>
+    /// Called when a run starts. Everything here is static because there is one
+    /// combat at a time, but a session plays many runs, and a failure latched in
+    /// run one should not silently disable a feature for the rest of the
+    /// session.
+    /// </remarks>
+    internal static void Reset()
+    {
+        _current = null;
+        _everSeen = false;
+    }
 
     /// <summary>
     /// The player whose piles the tracker shows.

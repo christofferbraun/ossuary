@@ -31,6 +31,8 @@ public partial class HudController : CanvasLayer
     private Label? _hint;
     private OssuarySettings _settings = new();
 
+    private OfferBadges? _badges;
+
     private bool _layoutMode;
     private HudPanel? _dragging;
     private Vector2 _dragGrip;
@@ -44,6 +46,13 @@ public partial class HudController : CanvasLayer
         try
         {
             if (parent.GetNodeOrNull(new NodePath(NodeName)) is not null) return;
+
+            // A session plays many runs. Anything latched during the last one -
+            // a cached combat, a failure that disabled a reader - would
+            // otherwise carry into this one.
+            State.CombatWatcher.Reset();
+            State.DrawEstimator.Reset();
+            State.IntentReader.Reset();
 
             var hud = new HudController { Name = NodeName, Layer = OverlayLayer, _settings = settings };
             parent.AddChild(hud);
@@ -78,6 +87,8 @@ public partial class HudController : CanvasLayer
             Add(new StatusPanel());
             Add(new DeckPanel(_settings));
             Add(new ForecastPanel(_settings));
+
+            _badges = new OfferBadges(_settings, _root);
             if (_settings.CanaryPanel) Add(new CanaryPanel());
 
             _hint = new Label
@@ -106,6 +117,18 @@ public partial class HudController : CanvasLayer
 
     public override void _Process(double delta)
     {
+        // Badges are drawn on this layer, so they are hidden with it — but the
+        // call still runs while hidden, cheaply, so the label set is dropped
+        // rather than left holding references to nodes the game has freed.
+        //
+        // Scanned from the viewport root rather than from NRun. Not everything
+        // that offers you something lives under the run - Neow's opening relic
+        // choice is presented before the map exists - and a scan rooted at the
+        // run silently misses those. The candidate cap is what keeps a wider
+        // walk safe.
+        var scanRoot = GetTree()?.Root ?? GetParent();
+        if (scanRoot is not null) _badges?.Tick(scanRoot, Visible);
+
         if (!Visible) return;
 
         // Panels isolate their own failures, so one bad panel cannot stop the

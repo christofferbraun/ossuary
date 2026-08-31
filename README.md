@@ -41,7 +41,7 @@ game; ratings on offers and the Workshop release are still to come.
 | **M2** Bundled community data + normal-curve tiers | ✅ done |
 | **M3** Deck tracker | ✅ done |
 | **M4** Attack forecast | ✅ done |
-| **M5** Tier ratings on offers | next |
+| **M5** Tier ratings on offers | 🔨 built, in testing |
 | **M6** Workshop release | planned |
 
 Deck-*conditioned* advice — grades that account for the deck you actually have —

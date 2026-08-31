@@ -57,6 +57,12 @@ internal sealed class OssuarySettings
     public double ClampedTextScale => Math.Clamp(TextScale, 0.5, 2.5);
 
     /// <summary>
+    /// Shows the community grade on cards, relics and potions you are offered.
+    /// Off means Ossuary adds nothing to the game's own nodes at all.
+    /// </summary>
+    public bool OfferRatings { get; set; } = true;
+
+    /// <summary>
     /// Adds a panel whose only purpose is to throw, proving that one failing
     /// panel disables itself and leaves the rest of the HUD running. Off by
     /// default; this is a development aid, not a feature.
