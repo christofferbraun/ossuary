@@ -189,7 +189,10 @@ internal sealed class DeckPanel : HudPanel
 
             var g = groups[row];
             Cell(grid, row, 0).Text = g.EnergyCost == TrackedCard.XCost ? "X" : g.EnergyCost.ToString();
-            Cell(grid, row, 1).Text = g.UpgradeLevel > 0 ? $"{g.Title}+" : g.Title;
+            // No upgrade marker is added here: CardModel.Title already carries
+            // one - "Bash+", and "Searing Blow+3" for a card that can be
+            // upgraded more than once - so appending another produced "Bash++".
+            Cell(grid, row, 1).Text = g.Title;
             Cell(grid, row, 2).Text = g.Count > 1 ? $"x{g.Count}" : "";
             Cell(grid, row, 3).Text = $"{g.OddsIn(pileSize, draws):P0}";
         }
