@@ -14,6 +14,8 @@ What is shipped, what is in flight, and what the milestone names mean.
 | M5 | Community ratings on the cards, relics and potions you are offered |
 | M6 | Steam Workshop packaging and release gate — *in flight, not yet published* |
 
+Versions and what changed in each are in [CHANGELOG.md](../CHANGELOG.md).
+
 ## V2 — in flight
 
 Numbered separately because these are additions to a working mod rather than
@@ -78,9 +80,7 @@ so it answers a different question from a card sitting in hand. Reported as
 **Single player.** Hidden by default: alone there is no hand you cannot see,
 and your own is on screen. `TeamPanelInSinglePlayer` turns it on.
 
-### v2M2 — per-panel show/hide
-
-Branch: `v2m2-panel-toggles`
+### v2M2 — per-panel show/hide — shipped in v0.7.0
 
 An `ON`/`OFF` control on every panel while layout mode is open. Clicking it
 hides that panel; the state is saved beside the panel's position and restored

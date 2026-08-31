@@ -39,10 +39,10 @@ than guessing at it, and it works with the window wherever you put it.
 
 ## Status
 
-In development, and playable. Everything in v1 is in `main` and working in game;
-the Workshop release is the remaining piece.
+In development, and playable. Everything below is in `main` and working in game;
+the Workshop release is the remaining piece before 1.0.0.
 
-### v1 — what it does today
+### Shipped — what it does today
 
 | Milestone | State | |
 | --- | --- | --- |
@@ -52,18 +52,19 @@ the Workshop release is the remaining piece.
 | **M3** Deck tracker with per-card draw odds | ✅ shipped | reads the real draw, not an assumed five |
 | **M4** Incoming-attack forecast | ✅ shipped | the game's own damage calculation |
 | **M5** Tier ratings on offers | ✅ shipped | rewards, shop, chests, ancients' blessings |
-| **M6** Steam Workshop release | 🔨 in progress | packaging and release gate done; not yet published |
+| **v2M2** Per-panel show/hide | ✅ shipped | `ON`/`OFF` per panel in layout mode; the panel with the hotkeys stays on |
 
-### v2 — in flight
+### In flight
 
-Numbered separately because these are additions to a working mod rather than
-steps towards one. Each is independent and can ship in any order.
+M6 is what stands between this and 1.0.0. The v2 numbering is separate because
+those are additions to a working mod rather than steps towards one; each is
+independent and can ship in any order.
 
 | | | State |
 | --- | --- | --- |
+| **M6** Steam Workshop release | packaging, publish scripts and a release gate that fails a bad tag | done and unpublished — the first upload needs a signed-in Steam client |
 | **v2M0** Deck-conditioned advice | grades that account for the deck you actually have, from Codex's pairwise draft model | model and tests done; the harvest has never been run |
 | **v2M1** Party debuff coverage | whether anyone in a co-op party is holding Vulnerable or Weak **this turn** | built, in testing |
-| **v2M2** Per-panel show/hide | an `ON`/`OFF` control on each panel in layout mode, saved between sessions; the panel carrying the hotkeys stays on | built, in testing |
 
 **[docs/ROADMAP.md](docs/ROADMAP.md)** carries the reasoning behind each — what
 it is for, why it works the way it does, and what is deliberately not planned.
