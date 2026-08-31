@@ -63,6 +63,21 @@ internal sealed class OssuarySettings
     public bool OfferRatings { get; set; } = true;
 
     /// <summary>
+    /// Shows whether anyone in a co-op party can apply Vulnerable or Weak.
+    /// </summary>
+    public bool TeamPanel { get; set; } = true;
+
+    /// <summary>
+    /// Shows the party panel in single player too.
+    /// </summary>
+    /// <remarks>
+    /// Off by default. The panel exists because in co-op everyone assumes
+    /// somebody else picked up Vulnerable; alone there is no somebody else, and
+    /// the answer is one you already know from your own deck.
+    /// </remarks>
+    public bool TeamPanelInSinglePlayer { get; set; }
+
+    /// <summary>
     /// Adds a panel whose only purpose is to throw, proving that one failing
     /// panel disables itself and leaves the rest of the HUD running. Off by
     /// default; this is a development aid, not a feature.

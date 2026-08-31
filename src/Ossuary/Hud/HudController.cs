@@ -53,6 +53,7 @@ public partial class HudController : CanvasLayer
             State.CombatWatcher.Reset();
             State.DrawEstimator.Reset();
             State.IntentReader.Reset();
+            State.TeamReader.Reset();
 
             var hud = new HudController { Name = NodeName, Layer = OverlayLayer, _settings = settings };
             parent.AddChild(hud);
@@ -87,6 +88,7 @@ public partial class HudController : CanvasLayer
             Add(new StatusPanel(_settings));
             Add(new DeckPanel(_settings));
             Add(new ForecastPanel(_settings));
+            if (_settings.TeamPanel) Add(new TeamPanel(_settings));
 
             _badges = new OfferBadges(_settings, _root);
             if (_settings.CanaryPanel) Add(new CanaryPanel());

@@ -44,6 +44,7 @@ public static class ModEntry
             Settings = OssuarySettings.Load();
             Ratings.Load();
             State.CombatWatcher.Register();
+            State.TeamReader.Register();
 
             _harmony = new Harmony(HarmonyId);
             _harmony.PatchAll(typeof(ModEntry).Assembly);
