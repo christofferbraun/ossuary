@@ -93,10 +93,22 @@ internal static class TeamReader
         _lastRead = DateTime.MinValue;
     }
 
-    /// <summary>Forgets the previous run.</summary>
+    /// <summary>
+    /// Drops what was derived from the previous run, and clears a latched
+    /// failure so one bad run does not disable the panel for the session.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately does <b>not</b> clear <see cref="_run"/>. This is called
+    /// from the HUD attach, which runs on <c>NRun._Ready</c> — after
+    /// <c>RunManager.Launch</c> has already raised <c>RunStarted</c> for the
+    /// run being set up. Clearing the reference here would throw away the state
+    /// we had just been handed, and nothing would give it back until the
+    /// <em>next</em> run: the panel would silently work only inside combat, via
+    /// the fallback. The run reference has its own lifecycle — every new run
+    /// replaces it.
+    /// </remarks>
     internal static void Reset()
     {
-        _run = null;
         _party = [];
         _lastRead = DateTime.MinValue;
         _failed = false;
