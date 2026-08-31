@@ -63,7 +63,8 @@ internal sealed class OssuarySettings
     public bool OfferRatings { get; set; } = true;
 
     /// <summary>
-    /// Shows whether anyone in a co-op party can apply Vulnerable or Weak.
+    /// Shows whether anyone in a co-op party is holding Vulnerable or Weak this
+    /// turn.
     /// </summary>
     public bool TeamPanel { get; set; } = true;
 
@@ -71,9 +72,8 @@ internal sealed class OssuarySettings
     /// Shows the party panel in single player too.
     /// </summary>
     /// <remarks>
-    /// Off by default. The panel exists because in co-op everyone assumes
-    /// somebody else picked up Vulnerable; alone there is no somebody else, and
-    /// the answer is one you already know from your own deck.
+    /// Off by default. The panel exists because you cannot see a teammate's
+    /// hand; alone there is no hand you cannot see, and your own is on screen.
     /// </remarks>
     public bool TeamPanelInSinglePlayer { get; set; }
 

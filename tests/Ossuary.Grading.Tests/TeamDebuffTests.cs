@@ -8,11 +8,8 @@ public class TeamDebuffTests
     private static TeamMemberAccess Member(string name, params DebuffSource[] sources) =>
         new(name, IsYou: false, sources);
 
-    private static DebuffSource Card(string title, Debuffs applies) =>
-        new(title, SourceKind.Card, applies);
-
-    private static DebuffSource Relic(string title, Debuffs applies) =>
-        new(title, SourceKind.Relic, applies);
+    private static DebuffSource Hand(string title, Debuffs applies) =>
+        new(title, SourceKind.Hand, applies);
 
     private static DebuffSource Potion(string title, Debuffs applies) =>
         new(title, SourceKind.Potion, applies);
@@ -30,7 +27,7 @@ public class TeamDebuffTests
     [Fact]
     public void Sources_combine()
     {
-        var member = Member("Ironclad", Card("Bash", Debuffs.Vulnerable), Relic("Red Mask", Debuffs.Weak));
+        var member = Member("Ironclad", Hand("Bash", Debuffs.Vulnerable), Hand("Clash", Debuffs.Weak));
 
         Assert.Equal(Debuffs.Both, member.Available);
         Assert.True(member.Has(Debuffs.Vulnerable));
@@ -40,7 +37,7 @@ public class TeamDebuffTests
     [Fact]
     public void One_source_can_apply_both()
     {
-        var member = Member("Ironclad", Card("Uppercut", Debuffs.Both));
+        var member = Member("Ironclad", Hand("Uppercut", Debuffs.Both));
 
         Assert.Equal(Debuffs.Both, member.Available);
         Assert.Equal(Answer.Yes, member.AnswerFor(Debuffs.Vulnerable));
@@ -57,17 +54,17 @@ public class TeamDebuffTests
         var member = Member("Ironclad", Potion("Vulnerable Potion", Debuffs.Vulnerable));
 
         Assert.True(member.Has(Debuffs.Vulnerable));
-        Assert.False(member.HasRepeatable(Debuffs.Vulnerable));
+        Assert.False(member.HasInHand(Debuffs.Vulnerable));
         Assert.Equal(Answer.PotionOnly, member.AnswerFor(Debuffs.Vulnerable));
     }
 
     [Fact]
-    public void A_card_outranks_a_potion_for_the_same_debuff()
+    public void A_card_in_hand_outranks_a_potion_for_the_same_debuff()
     {
         var member = Member(
             "Ironclad",
             Potion("Vulnerable Potion", Debuffs.Vulnerable),
-            Card("Bash", Debuffs.Vulnerable));
+            Hand("Bash", Debuffs.Vulnerable));
 
         Assert.Equal(Answer.Yes, member.AnswerFor(Debuffs.Vulnerable));
         Assert.Equal("Bash", member.SourcesFor(Debuffs.Vulnerable).First().Title);
@@ -76,10 +73,10 @@ public class TeamDebuffTests
     [Fact]
     public void Sources_for_a_debuff_exclude_the_other_one()
     {
-        var member = Member("Ironclad", Card("Bash", Debuffs.Vulnerable), Relic("Red Mask", Debuffs.Weak));
+        var member = Member("Ironclad", Hand("Bash", Debuffs.Vulnerable), Hand("Clash", Debuffs.Weak));
 
         Assert.Equal(["Bash"], member.SourcesFor(Debuffs.Vulnerable).Select(s => s.Title));
-        Assert.Equal(["Red Mask"], member.SourcesFor(Debuffs.Weak).Select(s => s.Title));
+        Assert.Equal(["Clash"], member.SourcesFor(Debuffs.Weak).Select(s => s.Title));
     }
 
     [Fact]
@@ -87,8 +84,8 @@ public class TeamDebuffTests
     {
         TeamMemberAccess[] party =
         [
-            Member("Ironclad", Card("Bash", Debuffs.Vulnerable)),
-            Member("Silent", Card("Clash", Debuffs.Weak)),
+            Member("Ironclad", Hand("Bash", Debuffs.Vulnerable)),
+            Member("Silent", Hand("Clash", Debuffs.Weak)),
         ];
 
         Assert.Equal(Debuffs.None, TeamDebuffs.MissingFromParty(party));
@@ -99,7 +96,7 @@ public class TeamDebuffTests
     {
         TeamMemberAccess[] party =
         [
-            Member("Ironclad", Card("Bash", Debuffs.Vulnerable)),
+            Member("Ironclad", Hand("Bash", Debuffs.Vulnerable)),
             Member("Silent"),
         ];
 
@@ -130,7 +127,7 @@ public class TeamDebuffTests
     {
         TeamMemberAccess[] party =
         [
-            Member("Ironclad", Card("Bash", Debuffs.Vulnerable)),
+            Member("Ironclad", Hand("Bash", Debuffs.Vulnerable)),
             Member("Silent", Potion("Weak Potion", Debuffs.Weak)),
         ];
 
@@ -139,11 +136,11 @@ public class TeamDebuffTests
     }
 
     [Fact]
-    public void A_debuff_covered_by_a_card_is_not_reported_as_potion_only()
+    public void A_debuff_in_hand_is_not_reported_as_potion_only()
     {
         TeamMemberAccess[] party =
         [
-            Member("Ironclad", Card("Bash", Debuffs.Vulnerable), Potion("Vulnerable Potion", Debuffs.Vulnerable)),
+            Member("Ironclad", Hand("Bash", Debuffs.Vulnerable), Potion("Vulnerable Potion", Debuffs.Vulnerable)),
         ];
 
         Assert.Equal(Debuffs.Weak, TeamDebuffs.MissingFromParty(party));

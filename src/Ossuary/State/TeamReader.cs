@@ -1,15 +1,29 @@
+using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Powers;
-using MegaCrit.Sts2.Core.Runs;
 using Ossuary.Team;
 
 namespace Ossuary.State;
 
 /// <summary>
-/// Works out which debuffs each player in the party can actually apply.
+/// Works out which debuffs each player in the party can apply this turn.
 /// </summary>
 /// <remarks>
+/// <para>
+/// <b>This turn, not this run.</b> The sources are the cards in a player's
+/// hand right now, plus the potions in their belt. Their deck is deliberately
+/// not consulted: a card three shuffles away does not help with the enemy in
+/// front of you, and answering "yes" off it would make the panel agree with
+/// itself all run while being wrong on most turns. Relics are out for the same
+/// reason — a relic that applied Weak at the start of combat has already done
+/// it, which is a state the enemy is in rather than something a player can
+/// choose to do now.
+/// </para>
+/// <para>
+/// That makes this a combat-only reading. Outside a fight there is no hand, so
+/// there is no question to answer.
+/// </para>
 /// <para>
 /// <b>How a source is recognised.</b> Not by reading card text, which would
 /// break in every language but English and would confuse "Weak" with
@@ -32,20 +46,22 @@ namespace Ossuary.State;
 /// Ossuary being changed.
 /// </para>
 /// <para>
-/// <b>Cost.</b> Building a model's hover tips allocates, and a party of four
-/// with thirty-card decks is a few hundred models. So the answer is cached per
-/// card type — whether Bash applies Vulnerable is a fact about Bash, not about
-/// this copy of it — and the party is re-read on an interval rather than every
-/// frame.
+/// <b>Cost.</b> A hand is a handful of cards, so a party of four is a few dozen
+/// models rather than a few hundred — but building a model's hover tips
+/// allocates, so the answer is still cached per card type. Whether Bash applies
+/// Vulnerable is a fact about Bash, not about this copy of it.
 /// </para>
 /// </remarks>
 internal static class TeamReader
 {
-    /// <summary>Re-reading the party twice a second is imperceptible.</summary>
-    private static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(500);
+    /// <summary>
+    /// Hands change during a turn, so this is read often — but four times a
+    /// second is still far more often than a card can be played.
+    /// </summary>
+    private static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(250);
 
     /// <summary>
-    /// Whether a given card, relic or potion applies either debuff.
+    /// Whether a given card or potion applies either debuff.
     /// </summary>
     /// <remarks>
     /// Keyed by model id and upgrade level, because an upgrade can change what
@@ -54,59 +70,14 @@ internal static class TeamReader
     /// </remarks>
     private static readonly Dictionary<string, Debuffs> Known = new(StringComparer.Ordinal);
 
-    private static RunState? _run;
-    private static bool _subscribed;
     private static bool _failed;
-
     private static DateTime _lastRead = DateTime.MinValue;
     private static IReadOnlyList<TeamMemberAccess> _party = [];
-
-    /// <summary>
-    /// Starts listening for the run, so the party can be read outside combat too.
-    /// </summary>
-    /// <remarks>
-    /// <c>RunManager.RunStarted</c> is raised from <c>Launch</c>, which every
-    /// setup path funnels through — new, loaded, single player and multiplayer
-    /// alike — so one subscription catches every run. The alternative,
-    /// <c>DebugOnlyGetState</c>, is public but named to say it is not this.
-    /// </remarks>
-    internal static void Register()
-    {
-        if (_subscribed) return;
-
-        try
-        {
-            RunManager.Instance.RunStarted += OnRunStarted;
-            _subscribed = true;
-            Log.Info("team reader registered");
-        }
-        catch (Exception ex)
-        {
-            _failed = true;
-            Log.Error("team reader could not register; the party panel will stay empty", ex);
-        }
-    }
-
-    private static void OnRunStarted(RunState state)
-    {
-        _run = state;
-        _lastRead = DateTime.MinValue;
-    }
 
     /// <summary>
     /// Drops what was derived from the previous run, and clears a latched
     /// failure so one bad run does not disable the panel for the session.
     /// </summary>
-    /// <remarks>
-    /// Deliberately does <b>not</b> clear <see cref="_run"/>. This is called
-    /// from the HUD attach, which runs on <c>NRun._Ready</c> — after
-    /// <c>RunManager.Launch</c> has already raised <c>RunStarted</c> for the
-    /// run being set up. Clearing the reference here would throw away the state
-    /// we had just been handed, and nothing would give it back until the
-    /// <em>next</em> run: the panel would silently work only inside combat, via
-    /// the fallback. The run reference has its own lifecycle — every new run
-    /// replaces it.
-    /// </remarks>
     internal static void Reset()
     {
         _party = [];
@@ -115,7 +86,7 @@ internal static class TeamReader
     }
 
     /// <summary>
-    /// The party, or an empty list outside a run.
+    /// The party, or an empty list outside combat.
     /// </summary>
     internal static IReadOnlyList<TeamMemberAccess> Party()
     {
@@ -141,10 +112,11 @@ internal static class TeamReader
 
     private static IReadOnlyList<TeamMemberAccess> Read()
     {
-        // The run knows the party everywhere; the combat only knows it in a
-        // fight. Prefer the run, fall back to the combat so the panel still
-        // works if the subscription was never reached.
-        var players = _run?.Players ?? CombatWatcher.Current?.Players;
+        // Combat only. A hand exists nowhere else, and CombatWatcher already
+        // knows when a fight is live - including that it has ended, which is
+        // the part that is easy to get wrong.
+        var state = CombatWatcher.Current;
+        var players = state?.Players;
         if (players is not { Count: > 0 }) return [];
 
         var local = CombatWatcher.LocalPlayer;
@@ -163,16 +135,14 @@ internal static class TeamReader
     {
         var sources = new List<DebuffSource>();
 
-        foreach (var card in player.Deck.Cards)
+        var hand = CardPile.Get(PileType.Hand, player)?.Cards;
+        if (hand is not null)
         {
-            if (card is null) continue;
-            Add(sources, card.Title, SourceKind.Card, Applies(card, $"{card.Id}/{card.CurrentUpgradeLevel}"));
-        }
-
-        foreach (var relic in player.Relics)
-        {
-            if (relic is null) continue;
-            Add(sources, Text(relic.Title), SourceKind.Relic, Applies(relic, relic.Id.ToString()));
+            foreach (var card in hand)
+            {
+                if (card is null) continue;
+                Add(sources, card.Title, SourceKind.Hand, Applies(card, $"{card.Id}/{card.CurrentUpgradeLevel}"));
+            }
         }
 
         foreach (var potion in player.Potions)
@@ -188,8 +158,8 @@ internal static class TeamReader
     {
         if (applies == Debuffs.None) return;
 
-        // A deck holds four copies of Bash; the answer is the same for each and
-        // the list is read by a person.
+        // Two copies of Bash in hand is the same answer as one, and the list is
+        // read by a person.
         var name = title ?? "?";
         if (sources.Any(s => s.Kind == kind && s.Title == name)) return;
 
@@ -240,7 +210,7 @@ internal static class TeamReader
         catch (Exception)
         {
             // A model that cannot describe itself is not a source. Not logged:
-            // this runs over every card in every deck.
+            // this runs over every card in every hand.
         }
 
         Known[key] = found;
@@ -255,7 +225,6 @@ internal static class TeamReader
         var tips = model switch
         {
             CardModel card => card.HoverTips,
-            RelicModel relic => relic.HoverTips,
             PotionModel potion => potion.HoverTips,
             _ => null,
         };
@@ -287,18 +256,11 @@ internal static class TeamReader
     /// </remarks>
     private static Debuffs FromDynamicVars(AbstractModel model)
     {
-        var vars = model switch
-        {
-            CardModel card => card.DynamicVars,
-            RelicModel relic => relic.DynamicVars,
-            _ => null,
-        };
-
-        if (vars is null) return Debuffs.None;
+        if (model is not CardModel card) return Debuffs.None;
 
         var found = Debuffs.None;
-        if (vars.ContainsKey(nameof(VulnerablePower))) found |= Debuffs.Vulnerable;
-        if (vars.ContainsKey(nameof(WeakPower))) found |= Debuffs.Weak;
+        if (card.DynamicVars.ContainsKey(nameof(VulnerablePower))) found |= Debuffs.Vulnerable;
+        if (card.DynamicVars.ContainsKey(nameof(WeakPower))) found |= Debuffs.Weak;
         return found;
     }
 }

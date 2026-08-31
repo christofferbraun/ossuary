@@ -5,20 +5,24 @@ using Ossuary.Team;
 namespace Ossuary.Hud;
 
 /// <summary>
-/// Whether anyone in the party can apply Vulnerable or Weak.
+/// Whether anyone in the party is holding Vulnerable or Weak <em>this turn</em>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The question this answers is the one that is easy to get wrong in co-op and
-/// expensive to discover late: everybody assumes somebody else picked up
-/// Vulnerable. It is not something you can check by looking — it means reading
-/// three other decks — and by the time a boss makes it obvious, the card
-/// rewards that would have fixed it are behind you.
+/// The question this answers is one you cannot see the answer to: whether a
+/// teammate has drawn a way to apply Vulnerable or Weak. Everybody assumes
+/// somebody else has it, nobody can read three other hands, and the turn is
+/// planned around a debuff that never lands.
 /// </para>
 /// <para>
-/// A potion is reported separately rather than counted as a yes. One Vulnerable
-/// potion is not the same as a deck that can apply Vulnerable every fight, and
-/// a flag that treats them alike is worse than no flag.
+/// Deliberately about the hand rather than the deck. "Somebody owns a card
+/// that applies Vulnerable" is true all run and useful on almost none of the
+/// turns in it.
+/// </para>
+/// <para>
+/// A potion is reported separately rather than counted as a yes. It is an
+/// escape hatch that is gone once used, so it answers a different question from
+/// a card sitting in hand.
 /// </para>
 /// </remarks>
 internal sealed class TeamPanel : HudPanel
@@ -68,10 +72,10 @@ internal sealed class TeamPanel : HudPanel
         var box = new VBoxContainer();
         panel.AddChild(box);
 
-        _header = MakeLabel("PARTY", Accent);
+        _header = MakeLabel("PARTY  ·  THIS TURN", Accent);
         box.AddChild(_header);
 
-        _idle = MakeLabel("not in a run", Dim, 15);
+        _idle = MakeLabel("not in combat", Dim, 15);
         box.AddChild(_idle);
 
         _grid = new GridContainer { Columns = Columns, MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -90,17 +94,17 @@ internal sealed class TeamPanel : HudPanel
         var party = TeamReader.Party();
 
         // In single player the panel answers a question nobody asked: there is
-        // no "somebody else" to be relying on. Layout mode still shows it so it
-        // can be positioned before a co-op run starts.
+        // no "somebody else" whose hand you cannot see. Layout mode still shows
+        // it so it can be positioned before a co-op run starts.
         if (party.Count < 2 && !_settings.TeamPanelInSinglePlayer)
         {
-            if (HideUnlessArranging()) ShowIdle(party.Count == 0 ? "not in a run" : "single player");
+            if (HideUnlessArranging()) ShowIdle(party.Count == 0 ? "not in combat" : "single player");
             return;
         }
 
         if (party.Count == 0)
         {
-            if (HideUnlessArranging()) ShowIdle("not in a run");
+            if (HideUnlessArranging()) ShowIdle("not in combat");
             return;
         }
 
@@ -162,18 +166,18 @@ internal sealed class TeamPanel : HudPanel
     /// The party-level answer, which is the one that actually matters.
     /// </summary>
     /// <remarks>
-    /// It does not matter which player brings Vulnerable, only that somebody
-    /// does — so the per-player rows are the detail and this is the finding.
+    /// It does not matter which player drew Vulnerable, only that somebody did
+    /// — so the per-player rows are the detail and this is the finding.
     /// </remarks>
     private static string Summarise(IReadOnlyList<TeamMemberAccess> party)
     {
         var missing = TeamDebuffs.MissingFromParty(party);
         var potionOnly = TeamDebuffs.PotionOnlyForParty(party);
 
-        if (missing == Debuffs.None && potionOnly == Debuffs.None) return "party covers both";
+        if (missing == Debuffs.None && potionOnly == Debuffs.None) return "both in hand somewhere";
 
         var parts = new List<string>(2);
-        if (missing != Debuffs.None) parts.Add($"nobody has {Describe(missing)}");
+        if (missing != Debuffs.None) parts.Add($"nobody drew {Describe(missing)}");
         if (potionOnly != Debuffs.None) parts.Add($"{Describe(potionOnly)} only from a potion");
 
         return string.Join("  ·  ", parts);
@@ -190,7 +194,7 @@ internal sealed class TeamPanel : HudPanel
     {
         if (_idle is null || _grid is null || _summary is null || _header is null) return;
 
-        _header.Text = "PARTY";
+        _header.Text = "PARTY  ·  THIS TURN";
         _idle.Text = message;
         _idle.Visible = true;
         _grid.Visible = false;

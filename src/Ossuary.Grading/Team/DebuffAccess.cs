@@ -1,14 +1,13 @@
 namespace Ossuary.Team;
 
 /// <summary>
-/// The debuffs a party needs somebody to be able to apply.
+/// The debuffs a party needs somebody to be able to apply <em>this turn</em>.
 /// </summary>
 /// <remarks>
 /// Only Vulnerable and Weak. They are the two the whole party benefits from and
-/// the two a run can plausibly end up with nobody carrying: Vulnerable
-/// multiplies everyone's damage, Weak cuts every incoming attack, and both are
-/// concentrated in a handful of cards and relics rather than spread across the
-/// pool. Strength or Block are not comparable — everyone has some.
+/// the two a turn can plausibly arrive with nobody able to apply: both are
+/// concentrated in a handful of cards rather than spread across the pool.
+/// Strength or Block are not comparable — everyone has some.
 /// </remarks>
 [Flags]
 public enum Debuffs
@@ -20,61 +19,66 @@ public enum Debuffs
 }
 
 /// <summary>
-/// One card, relic or potion that can apply a debuff, and which.
+/// One thing a player can play right now that would apply a debuff.
 /// </summary>
 /// <param name="Title">The name as shown in game.</param>
-/// <param name="Kind">Card, relic or potion — a potion is one use, so the
-/// distinction matters when reading the answer.</param>
-/// <param name="Applies">Which debuffs this source can apply.</param>
+/// <param name="Kind">Where it is — a card held this turn, or a potion.</param>
+/// <param name="Applies">Which debuffs playing it would apply.</param>
 public sealed record DebuffSource(string Title, SourceKind Kind, Debuffs Applies);
 
-/// <summary>Where a source of a debuff comes from.</summary>
+/// <summary>Where something playable this turn is sitting.</summary>
 /// <remarks>
-/// Kept apart because they are not equally reliable. A card in the deck is
-/// available every combat; a potion is available once, and then never again.
-/// Reporting "yes" off a single potion without saying so would be misleading.
+/// Kept apart because they are not the same answer. A card in hand is the
+/// question being asked. A potion is an escape hatch that is gone once used, so
+/// somebody whose only Vulnerable is a potion is in a different position from
+/// somebody holding a card that applies it.
+///
+/// Notably absent: the deck, and relics. Neither answers "this turn". A card
+/// three shuffles away is not available now, and a relic that applied Weak at
+/// the start of combat has already done it — that is a state the enemy is in,
+/// not something the player can choose to do.
 /// </remarks>
 public enum SourceKind
 {
-    Card,
-    Relic,
+    Hand,
     Potion,
 }
 
 /// <summary>
-/// What one player in the party can bring.
+/// What one player in the party can apply this turn.
 /// </summary>
 /// <param name="Name">How to label them — their character, since that is what
 /// distinguishes players in co-op and is always known.</param>
 /// <param name="IsYou">Whether this is the local player.</param>
-/// <param name="Sources">Everything they hold that can apply either debuff.</param>
+/// <param name="Sources">Everything they could play now that applies a debuff.</param>
 public sealed record TeamMemberAccess(string Name, bool IsYou, IReadOnlyList<DebuffSource> Sources)
 {
-    /// <summary>Everything this player can apply, from any source.</summary>
+    /// <summary>Everything they could apply this turn, from hand or belt.</summary>
     public Debuffs Available => Sources.Aggregate(Debuffs.None, (all, s) => all | s.Applies);
 
     /// <summary>
-    /// What they can apply repeatably — from cards and relics, not potions.
+    /// What they are actually holding — cards in hand, not potions.
     /// </summary>
     /// <remarks>
-    /// A potion is a single use. Someone whose only Vulnerable is one potion
-    /// does not have Vulnerable in any planning sense, and a flag that says
-    /// otherwise is worse than no flag.
+    /// This is the question the panel exists to answer. A potion is a one-shot
+    /// that is gone afterwards, so folding it in here would turn "somebody can
+    /// apply Vulnerable this turn and every turn they draw it" into the same
+    /// answer as "somebody can do it once, ever".
     /// </remarks>
-    public Debuffs Repeatable => Sources
-        .Where(s => s.Kind != SourceKind.Potion)
+    public Debuffs InHand => Sources
+        .Where(s => s.Kind == SourceKind.Hand)
         .Aggregate(Debuffs.None, (all, s) => all | s.Applies);
 
-    /// <summary>Whether <paramref name="debuff"/> is available at all.</summary>
+    /// <summary>Whether <paramref name="debuff"/> is available at all this turn.</summary>
     public bool Has(Debuffs debuff) => (Available & debuff) == debuff;
 
-    /// <summary>Whether it is available every combat rather than once.</summary>
-    public bool HasRepeatable(Debuffs debuff) => (Repeatable & debuff) == debuff;
+    /// <summary>Whether it is in hand rather than only in the belt.</summary>
+    public bool HasInHand(Debuffs debuff) => (InHand & debuff) == debuff;
 
     /// <summary>
     /// How to show this player's answer for one debuff.
     /// </summary>
-    public Answer AnswerFor(Debuffs debuff) => HasRepeatable(debuff)
+    public Answer AnswerFor(Debuffs debuff) => HasInHand(debuff)
         ? Answer.Yes
         : Has(debuff) ? Answer.PotionOnly : Answer.No;
 
@@ -82,8 +86,8 @@ public sealed record TeamMemberAccess(string Name, bool IsYou, IReadOnlyList<Deb
     /// The sources behind one debuff, best first, for a tooltip or a detail row.
     /// </summary>
     /// <remarks>
-    /// Cards and relics before potions, then alphabetically, so the useful
-    /// answer leads and the ordering does not shuffle between frames.
+    /// Hand before belt, then alphabetically, so the useful answer leads and
+    /// the ordering does not shuffle between frames.
     /// </remarks>
     public IEnumerable<DebuffSource> SourcesFor(Debuffs debuff) => Sources
         .Where(s => (s.Applies & debuff) == debuff)
@@ -105,37 +109,38 @@ public enum Answer
 public static class TeamDebuffs
 {
     /// <summary>
-    /// Debuffs that nobody in the party can apply repeatably.
+    /// Debuffs nobody in the party is holding a card for this turn.
     /// </summary>
     /// <remarks>
     /// The party-level answer is the interesting one: it does not matter which
-    /// player brings Vulnerable, only that somebody does. An empty party
+    /// player has Vulnerable in hand, only that somebody does. An empty party
     /// reports nothing missing rather than everything, because "nobody has
-    /// Vulnerable" is not a useful thing to say about no players.
+    /// Vulnerable" is not a useful thing to say about no players — and during
+    /// the frames a combat is being set up, that is exactly what the party is.
     /// </remarks>
     public static Debuffs MissingFromParty(IReadOnlyList<TeamMemberAccess> party)
     {
         if (party.Count == 0) return Debuffs.None;
 
-        var covered = party.Aggregate(Debuffs.None, (all, m) => all | m.Repeatable);
+        var covered = party.Aggregate(Debuffs.None, (all, m) => all | m.InHand);
         return Debuffs.Both & ~covered;
     }
 
     /// <summary>
-    /// Debuffs somebody has, but only out of a potion.
+    /// Debuffs somebody could apply, but only by spending a potion.
     /// </summary>
     /// <remarks>
-    /// Worth separating from <see cref="MissingFromParty"/>: "you have one
-    /// Vulnerable potion and nothing else" is a different situation from "you
-    /// have no Vulnerable at all", and collapsing them loses the distinction
-    /// exactly when it matters.
+    /// Worth separating from <see cref="MissingFromParty"/>: "nobody drew it but
+    /// somebody is carrying the potion" is a different turn from "nobody can do
+    /// it at all", and collapsing them loses the distinction exactly when it
+    /// decides whether to spend the potion.
     /// </remarks>
     public static Debuffs PotionOnlyForParty(IReadOnlyList<TeamMemberAccess> party)
     {
         if (party.Count == 0) return Debuffs.None;
 
         var any = party.Aggregate(Debuffs.None, (all, m) => all | m.Available);
-        var repeatable = party.Aggregate(Debuffs.None, (all, m) => all | m.Repeatable);
-        return any & ~repeatable;
+        var inHand = party.Aggregate(Debuffs.None, (all, m) => all | m.InHand);
+        return any & ~inHand;
     }
 }
