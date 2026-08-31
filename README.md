@@ -159,8 +159,6 @@ docs/ROADMAP.md        what is shipped, what is in flight, and why
 docs/COMPAT.md         every hook and patch, and the build it was verified against
 docs/COMPLIANCE.md     whether this may exist and be published, with the evidence
 docs/RELEASING.md      how a version reaches the Workshop
-docs/COMPLIANCE.md     whether this may exist and be published, with the evidence
-docs/RELEASING.md      how a version reaches the Workshop
 ```
 
 `Ossuary.Grading` is kept free of game references on purpose: it is the part
