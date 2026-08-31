@@ -58,6 +58,32 @@ jobs:
           PY
 
 
+      # The release scripts are PowerShell, and a .ps1 with non-ASCII and no
+      # UTF-8 BOM does not run on Windows PowerShell at all. tools/logs.ps1 was
+      # broken that way for several milestones without anyone noticing, and the
+      # scripts this gate is protecting - package.ps1 and publish.ps1 - are the
+      # two where finding out at release time is most expensive.
+      - name: PowerShell scripts must parse on Windows
+        run: python3 tools/check-encoding.py
+
+      - name: The manifest and the code must agree on the game version
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, re, sys
+          manifest = json.load(open("src/Ossuary/Ossuary.json"))["min_game_version"]
+          source = open("src/Ossuary/GameVersion.cs", encoding="utf-8").read()
+          m = re.search(r'VerifiedAgainst\s*=\s*"([^"]+)"', source)
+          if not m:
+              sys.exit("no VerifiedAgainst constant in GameVersion.cs")
+          if manifest != m.group(1):
+              sys.exit(
+                  f"Ossuary.json says min_game_version {manifest} but GameVersion.cs "
+                  f"was verified against {m.group(1)}. One of them is out of date, and "
+                  "shipping the pair means telling players something the code disagrees with.")
+          print("game version agrees:", manifest)
+          PY
+
       - name: The mod manifest must still declare it changes nothing
         run: |
           set -euo pipefail
